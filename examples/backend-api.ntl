@@ -1,0 +1,52 @@
+import { http, logger } from "ntl"
+
+val log = logger.create({ level: "info", name: "api" })
+val app = http.createServer()
+
+app.get("/", (req, res) => {
+  res.json({ 
+    message: "NTL API running", 
+    version: "1.0.0" 
+  })
+})
+
+app.get("/users/:id", (req, res) => {
+  val id = req.params.id
+  log.info("Fetching user " + id)
+  res.json({ 
+    id: id, 
+    name: "User " + id, 
+    active: true 
+  })
+})
+
+app.post("/users", (req, res) => {
+  val body = req.body
+  
+  unless body.name {
+    res.status(400).json({ error: "name is required" })
+    return
+  }
+  
+  log.info("Creating user: " + body.name)
+  res.status(201).json({ 
+    id: 1, 
+    name: body.name, 
+    createdAt: new Date().toISOString() 
+  })
+})
+
+app.delete("/users/:id", (req, res) => {
+  val id = req.params.id
+  log.warn("Deleting user " + id)
+  res.json({ 
+    deleted: true, 
+    id: id 
+  })
+})
+
+app.use(http.middleware.cors())
+
+app.listen(3000, () => {
+  log.info("Server running on http://localhost:3000")
+})

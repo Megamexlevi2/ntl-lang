@@ -1,0 +1,36 @@
+{
+  "name": "ntl-lang",
+  "version": "1.0.0",
+  "description": "NTL",
+  "main": "src/compiler.js",
+  "bin": {
+    "ntl": "./main.js",
+    "nax": "./main.js"
+  },
+  "scripts": {
+    "build": "node main.js build ntl.json",
+    "dev": "node main.js dev",
+    "test": "node main.js run examples/hello.ntl"
+  },
+  "keywords": [
+    "ntl",
+    "language",
+    "compiler",
+    "typescript-alternative",
+    "backend",
+    "game-dev"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Megamexlevi2/ntl-lang.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Megamexlevi2/ntl-lang/issues"
+  },
+  "homepage": "https://github.com/Megamexlevi2/ntl-lang",
+  "author": "David Dev",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
