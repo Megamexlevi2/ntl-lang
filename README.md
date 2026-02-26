@@ -1389,7 +1389,6 @@ NAX is the NTL compiler
 
 ```json
 {
-  "$schema": "https://ntlang.dev/schema/ntl.json",
   "name": "my-app",
   "version": "1.0.0",
   "src": "src",
