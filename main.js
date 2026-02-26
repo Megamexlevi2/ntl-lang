@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 'use strict';
+
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+// © David Dev 2026. All rights reserved.
+
 const fs   = require('fs');
 const path = require('path');
 const vm   = require('vm');

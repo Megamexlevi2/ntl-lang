@@ -1,6 +1,6 @@
 {
-  "name": "ntl-lang",
-  "version": "1.0.0",
+  "name": "@david0dev/ntl-lang",
+  "version": "1.0.1",
   "description": "NTL",
   "main": "src/compiler.js",
   "bin": {

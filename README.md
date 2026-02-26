@@ -35,7 +35,7 @@
 ### Installation
 
 ```bash
-npm install -g ntl-lang
+npm install -g @david0dev/ntl-lang
 ```
 
 ### Your First Program

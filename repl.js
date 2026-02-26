@@ -1,4 +1,9 @@
 'use strict';
+
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+// © David Dev 2026. All rights reserved.
+
 const readline = require('readline');
 const vm       = require('vm');
 const path     = require('path');
