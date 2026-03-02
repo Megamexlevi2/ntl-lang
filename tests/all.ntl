@@ -1,0 +1,529 @@
+// NTL v2.1 — Full Test Suite
+val {suite, test, run, assert} = require("ntl:test")
+
+// ── Core Language ─────────────────────────────────────────────────────────────
+
+suite("Variables", (s) => {
+  s.test("val (const)", (t) => {
+    val x = 42
+    t.equal(x, 42)
+    t.type(x, "number")
+  })
+  s.test("var (let)", (t) => {
+    var n = 0
+    n += 5
+    t.equal(n, 5)
+  })
+  s.test("destructuring object", (t) => {
+    val {a, b} = {a: 1, b: 2}
+    t.equal(a, 1)
+    t.equal(b, 2)
+  })
+  s.test("destructuring array", (t) => {
+    val [x, y, ...rest] = [1, 2, 3, 4]
+    t.equal(x, 1)
+    t.equal(y, 2)
+    t.deepEqual(rest, [3, 4])
+  })
+})
+
+suite("Functions", (s) => {
+  s.test("basic function", (t) => {
+    fn add(a, b) { return a + b }
+    t.equal(add(2, 3), 5)
+  })
+  s.test("default parameters", (t) => {
+    fn greet(name, greeting = "Hello") { return "{greeting}, {name}!" }
+    t.equal(greet("Alice"), "Hello, Alice!")
+    t.equal(greet("Bob", "Hi"), "Hi, Bob!")
+  })
+  s.test("rest params", (t) => {
+    fn sum(...nums) { return nums.reduce((a, b) => a + b, 0) }
+    t.equal(sum(1, 2, 3, 4), 10)
+  })
+  s.test("arrow function", (t) => {
+    val double = x => x * 2
+    t.equal(double(5), 10)
+  })
+  s.test("destructured params", (t) => {
+    fn show({name, age}) { return "{name}:{age}" }
+    t.equal(show({name: "Alice", age: 30}), "Alice:30")
+  })
+  s.test("async function", async (t) => {
+    async fn wait(ms) { return new Promise(r => setTimeout(r, ms)) }
+    await wait(10)
+    t.ok(true)
+  })
+})
+
+suite("Control Flow", (s) => {
+  s.test("if / elif / else", (t) => {
+    fn classify(n) {
+      if n > 0 { return "positive" }
+      elif n < 0 { return "negative" }
+      else { return "zero" }
+    }
+    t.equal(classify(5),  "positive")
+    t.equal(classify(-1), "negative")
+    t.equal(classify(0),  "zero")
+  })
+  s.test("unless", (t) => {
+    var called = false
+    unless false { called = true }
+    t.ok(called)
+  })
+  s.test("while", (t) => {
+    var i = 0
+    while i < 5 { i++ }
+    t.equal(i, 5)
+  })
+  s.test("repeat", (t) => {
+    var count = 0
+    repeat 4 { count++ }
+    t.equal(count, 4)
+  })
+  s.test("each", (t) => {
+    val result = []
+    each x in [1, 2, 3] { result.push(x * 2) }
+    t.deepEqual(result, [2, 4, 6])
+  })
+  s.test("for...of", (t) => {
+    val items = []
+    for val n of [10, 20, 30] { items.push(n) }
+    t.deepEqual(items, [10, 20, 30])
+  })
+  s.test("range", (t) => {
+    t.deepEqual(range(5), [0, 1, 2, 3, 4])
+    t.deepEqual(range(0, 6, 2), [0, 2, 4])
+  })
+  s.test("match", (t) => {
+    fn label(s) {
+      return match s {
+        case "a" => { "alpha" }
+        case "b" => { "beta" }
+        default  => { "other" }
+      }
+    }
+    t.equal(label("a"), "alpha")
+    t.equal(label("b"), "beta")
+    t.equal(label("z"), "other")
+  })
+  s.test("guard", (t) => {
+    fn safeDiv(a, b) {
+      guard b !== 0 else { return null }
+      return a / b
+    }
+    t.equal(safeDiv(10, 2), 5)
+    t.equal(safeDiv(10, 0), null)
+  })
+  s.test("try?", (t) => {
+    val good = try? JSON.parse('{"ok":true}')
+    val bad  = try? JSON.parse("not json")
+    t.deepEqual(good, {ok: true})
+    t.equal(bad, null)
+  })
+})
+
+suite("Classes", (s) => {
+  s.test("basic class", (t) => {
+    class Animal {
+      init(name) { this.name = name }
+      speak() { return "{this.name} speaks" }
+    }
+    val a = new Animal("Cat")
+    t.equal(a.speak(), "Cat speaks")
+  })
+  s.test("inheritance", (t) => {
+    class Shape {
+      init(color) { this.color = color }
+      describe() { return "A {this.color} shape" }
+    }
+    class Circle extends Shape {
+      init(color, r) { super(color); this.r = r }
+      area() { return Math.PI * this.r * this.r }
+    }
+    val c = new Circle("red", 5)
+    t.equal(c.describe(), "A red shape")
+    t.closeTo(c.area(), 78.53, 0.01)
+  })
+  s.test("get/set", (t) => {
+    class Box {
+      init(v) { this._v = v }
+      get value() { return this._v }
+      set value(n) { this._v = n }
+    }
+    val b = new Box(10)
+    t.equal(b.value, 10)
+    b.value = 20
+    t.equal(b.value, 20)
+  })
+  s.test("static methods", (t) => {
+    class MathHelper {
+      static square(n) { return n * n }
+      static cube(n)   { return n * n * n }
+    }
+    t.equal(MathHelper.square(4), 16)
+    t.equal(MathHelper.cube(3),   27)
+  })
+})
+
+suite("Template Strings", (s) => {
+  s.test("basic interpolation", (t) => {
+    val name = "World"
+    val msg  = "Hello, {name}!"
+    t.equal(msg, "Hello, World!")
+  })
+  s.test("expressions", (t) => {
+    val a = 3, b = 4
+    t.equal("Sum: {a + b}", "Sum: 7")
+  })
+})
+
+suite("Safe Operations", (s) => {
+  s.test("ifhave", (t) => {
+    var got = null
+    val v = "hello"
+    ifhave v as x { got = x.toUpperCase() }
+    t.equal(got, "HELLO")
+  })
+  s.test("have operator", (t) => {
+    val obj = {a: {b: {c: 42}}}
+    val val1 = have obj.a.b.c
+    val val2 = have obj.x.y.z
+    t.equal(val1, 42)
+    t.equal(val2, undefined)
+  })
+  s.test("nullish coalescing", (t) => {
+    val x = null ?? "default"
+    val y = 0    ?? "default"
+    t.equal(x, "default")
+    t.equal(y, 0)
+  })
+})
+
+suite("Pipeline", (s) => {
+  s.test("|> pipeline", (t) => {
+    val result = [1,2,3,4,5]
+      |> (arr => arr.filter(x => x % 2 === 0))
+      |> (arr => arr.map(x => x * 10))
+    t.deepEqual(result, [20, 40])
+  })
+})
+
+// ── Modules ───────────────────────────────────────────────────────────────────
+
+suite("ntl:crypto", (s) => {
+  val crypto = require("ntl:crypto")
+  s.test("sha256", (t) => {
+    val h = crypto.sha256("hello")
+    t.equal(h.length, 64)
+    t.type(h, "string")
+    t.equal(crypto.sha256("hello"), h)
+  })
+  s.test("uuid", (t) => {
+    val id = crypto.uuid()
+    t.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+  })
+  s.test("randomInt", (t) => {
+    val n = crypto.randomInt(0, 100)
+    t.ok(n >= 0 && n < 100)
+  })
+  s.test("JWT sign/verify", (t) => {
+    val token = crypto.signJWT({userId: 99, role: "admin"}, "secret", 3600)
+    t.type(token, "string")
+    val payload = crypto.verifyJWT(token, "secret")
+    t.equal(payload.userId, 99)
+    t.equal(payload.role, "admin")
+  })
+  s.test("AES encrypt/decrypt", (t) => {
+    val cipher = crypto.encryptAES("my message", "pass123")
+    val plain  = crypto.decryptAES(cipher, "pass123")
+    t.equal(plain, "my message")
+  })
+  s.test("password hash/verify", (t) => {
+    val hash = crypto.hashPassword("mypassword")
+    t.ok(crypto.verifyPassword("mypassword", hash))
+    t.notOk(crypto.verifyPassword("wrongpass", hash))
+  })
+  s.test("base64", (t) => {
+    val enc = crypto.base64Encode("hello world")
+    val dec = crypto.base64Decode(enc)
+    t.equal(dec, "hello world")
+  })
+})
+
+suite("ntl:validate", (s) => {
+  val {object, string, number, boolean, array, union, literal} = require("ntl:validate")
+  s.test("string validators", (t) => {
+    val schema = string().email()
+    t.ok(schema.safeParse("user@example.com").success)
+    t.notOk(schema.safeParse("not-an-email").success)
+  })
+  s.test("number validators", (t) => {
+    val schema = number().min(0).max(100).integer()
+    t.ok(schema.safeParse(50).success)
+    t.notOk(schema.safeParse(150).success)
+    t.notOk(schema.safeParse(5.5).success)
+  })
+  s.test("object schema", (t) => {
+    val schema = object({
+      name:  string().min(2),
+      email: string().email(),
+      age:   number().min(0).optional()
+    })
+    val good = schema.safeParse({name: "Alice", email: "a@b.com"})
+    val bad  = schema.safeParse({name: "A", email: "bad"})
+    t.ok(good.success)
+    t.notOk(bad.success)
+    t.ok(bad.errors.length > 0)
+  })
+  s.test("defaults", (t) => {
+    val schema = object({role: string().default("user")})
+    val result = schema.safeParse({})
+    t.ok(result.success)
+    t.equal(result.data.role, "user")
+  })
+})
+
+suite("ntl:cache", (s) => {
+  val {Cache} = require("ntl:cache")
+  s.test("set / get", (t) => {
+    val c = new Cache({ttl: 5000})
+    c.set("k", "value")
+    t.equal(c.get("k"), "value")
+  })
+  s.test("has / delete", (t) => {
+    val c = new Cache()
+    c.set("x", 42)
+    t.ok(c.has("x"))
+    c.delete("x")
+    t.notOk(c.has("x"))
+  })
+  s.test("TTL expiry", async (t) => {
+    val c = new Cache({ttl: 50})
+    c.set("tmp", "gone")
+    await new Promise(r => setTimeout(r, 100))
+    t.notOk(c.has("tmp"))
+    c.destroy()
+  })
+  s.test("getOrSet", async (t) => {
+    val c = new Cache()
+    var calls = 0
+    val result1 = await c.getOrSet("key", async () => { calls++; return "computed" })
+    val result2 = await c.getOrSet("key", async () => { calls++; return "computed" })
+    t.equal(result1, "computed")
+    t.equal(result2, "computed")
+    t.equal(calls, 1)
+    c.destroy()
+  })
+})
+
+suite("ntl:fs", (s) => {
+  val fs   = require("ntl:fs")
+  val path = require("path")
+  val tmp  = fs.tmpDir()
+  s.test("write and read", (t) => {
+    val file = path.join(tmp, "ntl_test_" + Date.now() + ".txt")
+    fs.write(file, "hello ntl")
+    t.equal(fs.read(file), "hello ntl")
+    fs.remove(file)
+  })
+  s.test("writeJson / readJson", (t) => {
+    val file = path.join(tmp, "ntl_test_" + Date.now() + ".json")
+    val obj  = {name: "NTL", version: 2}
+    fs.writeJson(file, obj)
+    val loaded = fs.readJson(file)
+    t.deepEqual(loaded, obj)
+    fs.remove(file)
+  })
+  s.test("exists", (t) => {
+    t.ok(fs.exists(tmp))
+    t.notOk(fs.exists(path.join(tmp, "definitely_not_there_xyz")))
+  })
+  s.test("path utilities", (t) => {
+    t.equal(fs.basename("/a/b/c.txt"), "c.txt")
+    t.equal(fs.dirname("/a/b/c.txt"), "/a/b")
+    t.equal(fs.extension("file.ntl"), "ntl")
+  })
+})
+
+suite("ntl:events", (s) => {
+  val {EventEmitter} = require("ntl:events")
+  s.test("on / emit", (t) => {
+    val em = new EventEmitter()
+    var received = null
+    em.on("data", (v) => { received = v })
+    em.emit("data", 42)
+    t.equal(received, 42)
+  })
+  s.test("once", (t) => {
+    val em = new EventEmitter()
+    var count = 0
+    em.once("tick", () => { count++ })
+    em.emit("tick"); em.emit("tick"); em.emit("tick")
+    t.equal(count, 1)
+  })
+  s.test("off", (t) => {
+    val em = new EventEmitter()
+    var count = 0
+    val handler = () => { count++ }
+    em.on("x", handler)
+    em.emit("x")
+    em.off("x", handler)
+    em.emit("x")
+    t.equal(count, 1)
+  })
+  s.test("waitFor", async (t) => {
+    val em = new EventEmitter()
+    setTimeout(() => { em.emit("ready", "go!") }, 20)
+    val result = await em.waitFor("ready", 1000)
+    t.equal(result, "go!")
+  })
+})
+
+suite("ntl:logger", (s) => {
+  val {Logger} = require("ntl:logger")
+  s.test("creates logger", (t) => {
+    val log = new Logger({name: "test", level: 4})
+    t.ok(log)
+    t.type(log.info, "function")
+    t.type(log.error, "function")
+  })
+  s.test("child logger", (t) => {
+    val parent = new Logger({name: "parent", level: 4})
+    val child  = parent.child({name: "child"})
+    t.ok(child)
+  })
+  s.test("timer", (t) => {
+    val log = new Logger({level: 4})
+    log.time("op")
+    val ms = log.timeEnd("op")
+    t.ok(ms >= 0)
+  })
+})
+
+suite("ntl:env", (s) => {
+  val {Env} = require("ntl:env")
+  s.test("get with default", (t) => {
+    val env = new Env()
+    t.equal(env.str("DEFINITELY_MISSING_XYZ", "fallback"), "fallback")
+    t.equal(env.int("DEFINITELY_MISSING_XYZ", 99), 99)
+    t.equal(env.bool("DEFINITELY_MISSING_XYZ", false), false)
+  })
+  s.test("has", (t) => {
+    val env = new Env()
+    t.ok(env.has("PATH"))
+    t.notOk(env.has("__NTL_MISSING_ENV_VAR__"))
+  })
+  s.test("list", (t) => {
+    val env = new Env()
+    env.set("TEST_LIST", "a,b,c")
+    val lst = env.list("TEST_LIST", ",")
+    t.deepEqual(lst, ["a", "b", "c"])
+  })
+})
+
+suite("ntl:db", (s) => {
+  val {Database} = require("ntl:db")
+  val db = new Database(":memory:")
+  db.createTable("items", (t) => {
+    t.id(); t.text("name"); t.integer("qty", {default: 0}); t.boolean("active", true)
+  })
+
+  s.test("insert and find", (t) => {
+    val id   = db.table("items").insert({name: "Widget", qty: 5})
+    val item = db.table("items").find(id)
+    t.ok(item)
+    t.equal(item.name, "Widget")
+    t.equal(item.qty,  5)
+  })
+  s.test("where", (t) => {
+    db.table("items").insert({name: "Gadget",  qty: 2})
+    db.table("items").insert({name: "Gizmo",   qty: 10})
+    val big = db.table("items").where("qty", ">", 4).all()
+    t.ok(big.length >= 2)
+  })
+  s.test("update", (t) => {
+    val id = db.table("items").insert({name: "Old", qty: 1})
+    db.table("items").where("id", id).update({name: "New", qty: 99})
+    val updated = db.table("items").find(id)
+    t.equal(updated.name, "New")
+    t.equal(updated.qty, 99)
+  })
+  s.test("delete", (t) => {
+    val id = db.table("items").insert({name: "ToDelete"})
+    db.table("items").where("id", id).delete()
+    t.equal(db.table("items").find(id), null)
+  })
+  s.test("count / paginate", (t) => {
+    val total = db.table("items").count()
+    t.ok(total >= 0)
+    val page = db.table("items").paginate(1, 2)
+    t.ok(page.data !== undefined)
+    t.ok(typeof page.total === 'number')
+  })
+  s.test("transaction", (t) => {
+    db.transaction(() => {
+      db.table("items").insert({name: "TxA"})
+      db.table("items").insert({name: "TxB"})
+    })
+    val names = db.table("items").whereIn("name", ["TxA","TxB"]).pluck("name")
+    t.includes(names, "TxA")
+    t.includes(names, "TxB")
+  })
+  s.test("model", (t) => {
+    val Items = db.model("items", {casts: {active: "boolean", qty: "number"}})
+    val item  = Items.create({name: "ModelItem", qty: 7})
+    t.ok(item.id)
+    t.equal(item.qty, 7)
+    t.type(item.active, "boolean")
+  })
+})
+
+suite("JSX Transform", (s) => {
+  val {transformJSX} = require("./src/jsx-transform")
+  s.test("basic element", (t) => {
+    val r = transformJSX('<div className="box">Hello</div>', {importReact: false})
+    t.ok(r.success)
+    t.includes(r.code, 'React.createElement("div"')
+    t.includes(r.code, '"Hello"')
+  })
+  s.test("component (uppercase)", (t) => {
+    val r = transformJSX('<Button label="ok" />', {importReact: false})
+    t.ok(r.success)
+    t.includes(r.code, 'React.createElement(Button,')
+  })
+  s.test("fragment", (t) => {
+    val r = transformJSX('<><h1>A</h1><p>B</p></>', {importReact: false})
+    t.ok(r.success)
+    t.includes(r.code, 'React.Fragment')
+  })
+  s.test("nested JSX in expression", (t) => {
+    val r = transformJSX('<div>{ok && <span>Yes</span>}</div>', {importReact: false})
+    t.ok(r.success)
+    t.includes(r.code, 'React.createElement("span"')
+  })
+  s.test("map inside JSX", (t) => {
+    val r = transformJSX('<ul>{items.map(i => <li key={i.id}>{i.name}</li>)}</ul>', {importReact: false})
+    t.ok(r.success)
+    t.includes(r.code, 'React.createElement("li"')
+  })
+  s.test("spread props", (t) => {
+    val r = transformJSX('<Comp {...props} extra="1" />', {importReact: false})
+    t.ok(r.success)
+    t.includes(r.code, 'Object.assign')
+  })
+  s.test("auto React import", (t) => {
+    val r = transformJSX('<div>Hello</div>', {importReact: true})
+    t.ok(r.success)
+    t.includes(r.code, "require(\"react\")")
+  })
+  s.test("ternary in children", (t) => {
+    val r = transformJSX('<div>{x ? <b>t</b> : <i>f</i>}</div>', {importReact: false})
+    t.ok(r.success)
+    t.includes(r.code, 'React.createElement("b"')
+    t.includes(r.code, 'React.createElement("i"')
+  })
+})
+
+run()

@@ -1,0 +1,140 @@
+fn levenshtein(a, b) {
+  val m = a.length
+  val n = b.length
+  if (m === 0) { return n }
+  if (n === 0) { return m }
+  val dp = Array.from({ length: m + 1 }, (_, i) => [i])
+  var j = 0
+  while (j <= n) { dp[0][j] = j; j++ }
+  var i = 1
+  while (i <= m) {
+    var k = 1
+    while (k <= n) {
+      if (a[i-1] === b[k-1]) {
+        dp[i][k] = dp[i-1][k-1]
+      } else {
+        dp[i][k] = 1 + Math.min(dp[i-1][k], dp[i][k-1], dp[i-1][k-1])
+      }
+      k++
+    }
+    i++
+  }
+  return dp[m][n]
+}
+
+fn findSimilar(name, candidates, maxDist) {
+  maxDist = maxDist || 2
+  return candidates
+    .filter(c => c !== name && levenshtein(name.toLowerCase(), c.toLowerCase()) <= maxDist)
+    .slice(0, 3)
+}
+
+fn formatTime(ms) {
+  if (ms < 1000) { return ms + "ms" }
+  return (ms / 1000).toFixed(2) + "s"
+}
+
+fn formatBytes(bytes) {
+  if (bytes < 1024) { return bytes + "B" }
+  if (bytes < 1024 * 1024) { return (bytes / 1024).toFixed(1) + "KB" }
+  return (bytes / 1024 / 1024).toFixed(2) + "MB"
+}
+
+fn deepClone(obj) {
+  if (obj === null || typeof obj !== "object") { return obj }
+  if (Array.isArray(obj)) { return obj.map(deepClone) }
+  val copy = {}
+  each k in Object.keys(obj) { copy[k] = deepClone(obj[k]) }
+  return copy
+}
+
+fn escapeString(str) {
+  return str
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, "\\\"")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")
+}
+
+fn slugify(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+}
+
+fn capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1)
+}
+
+fn camelToSnake(str) {
+  return str.replace(/([A-Z])/g, "_$1").toLowerCase()
+}
+
+fn snakeToCamel(str) {
+  return str.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+}
+
+fn isValidIdentifier(name) {
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name)
+}
+
+fn randomId(len) {
+  len = len || 8
+  val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+  var id = "_"
+  repeat len {
+    id += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return id
+}
+
+fn chunk(arr, size) {
+  val result = []
+  var i = 0
+  while (i < arr.length) {
+    result.push(arr.slice(i, i + size))
+    i += size
+  }
+  return result
+}
+
+fn flatten(arr) {
+  return arr.reduce((acc, item) => acc.concat(Array.isArray(item) ? flatten(item) : item), [])
+}
+
+fn unique(arr) {
+  return [...new Set(arr)]
+}
+
+fn groupBy(arr, fn_) {
+  val groups = {}
+  each item in arr {
+    val key = fn_(item)
+    if (!groups[key]) { groups[key] = [] }
+    groups[key].push(item)
+  }
+  return groups
+}
+
+fn padStart(str, len, char_) {
+  char_ = char_ || " "
+  if (str.length >= len) { return str }
+  return char_.repeat(len - str.length) + str
+}
+
+exports.levenshtein   = levenshtein
+exports.findSimilar   = findSimilar
+exports.formatTime    = formatTime
+exports.formatBytes   = formatBytes
+exports.deepClone     = deepClone
+exports.escapeString  = escapeString
+exports.slugify       = slugify
+exports.capitalize    = capitalize
+exports.camelToSnake  = camelToSnake
+exports.snakeToCamel  = snakeToCamel
+exports.isValidIdentifier = isValidIdentifier
+exports.randomId      = randomId
+exports.chunk         = chunk
+exports.flatten       = flatten
+exports.unique        = unique
+exports.groupBy       = groupBy
+exports.padStart      = padStart

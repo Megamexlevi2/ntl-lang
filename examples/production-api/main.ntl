@@ -1,0 +1,252 @@
+// ── NTL Production API Example ────────────────────────────────────────────
+// A real REST API: users, auth (JWT), validation, SQLite, logging
+// Run: ntl run examples/production-api/main.ntl
+// ─────────────────────────────────────────────────────────────────────────
+
+// Import NTL built-in modules
+import { Router, cors, rateLimit, listen } from 'ntl:http'
+import { Database } from 'ntl:db'
+import { signJWT, verifyJWT, hashPassword, verifyPassword, uuid } from 'ntl:crypto'
+import { v } from 'ntl:validate'
+import logger from 'ntl:logger'
+
+// Import Node.js built-in modules directly
+import os from 'os'
+import path from 'path'
+
+// ── Config ────────────────────────────────────────────────────────────────
+
+val PORT    = 3001
+val SECRET  = "ntl-jwt-secret-change-in-production"
+val DB_FILE = ":memory:"
+
+val log = logger.create({ name: "api", level: 0 })
+
+// ── Database ──────────────────────────────────────────────────────────────
+
+val db = new Database(DB_FILE)
+
+db.createTable("users", fn(t) {
+  t.id()
+  t.text("id_str", { unique: true })
+  t.text("name", {})
+  t.text("email", { unique: true })
+  t.text("password_hash", {})
+  t.text("role", {})
+  t.timestamps()
+})
+
+db.createTable("sessions", fn(t) {
+  t.id()
+  t.text("user_id", {})
+  t.text("token", { unique: true })
+  t.text("expires_at", {})
+  t.timestamps()
+})
+
+// Seed an admin user
+val adminHash = hashPassword("admin123")
+db.table("users").insert({
+  id_str: uuid(),
+  name: "Admin",
+  email: "admin@example.com",
+  password_hash: adminHash,
+  role: "admin",
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString()
+})
+
+log.info("Database initialized")
+
+// ── Validation Schemas ────────────────────────────────────────────────────
+
+val RegisterSchema = v.object({
+  name:     v.string().minLength(2).maxLength(100),
+  email:    v.string().email(),
+  password: v.string().minLength(8),
+})
+
+val LoginSchema = v.object({
+  email:    v.string().email(),
+  password: v.string().minLength(1),
+})
+
+// ── Auth Middleware ───────────────────────────────────────────────────────
+
+fn requireAuth(req, res, next) {
+  val header = req.get("authorization") || ""
+  guard header.startsWith("Bearer ") else {
+    res.status(401).json({ error: true, message: "Missing or invalid Authorization header" })
+    return
+  }
+  val token = header.slice(7)
+  val payload = try? verifyJWT(token, SECRET)
+  guard have payload else {
+    res.status(401).json({ error: true, message: "Invalid or expired token" })
+    return
+  }
+  req.user = payload
+  if next { next() }
+}
+
+fn requireAdmin(req, res, next) {
+  requireAuth(req, res, fn() {
+    guard req.user && req.user.role === "admin" else {
+      res.status(403).json({ error: true, message: "Admin access required" })
+      return
+    }
+    if next { next() }
+  })
+}
+
+// ── Router ────────────────────────────────────────────────────────────────
+
+val router = new Router()
+
+// Global middleware
+router.use(cors({ origin: "*" }))
+router.use(rateLimit({ windowMs: 60000, max: 100 }))
+
+// ── Health ────────────────────────────────────────────────────────────────
+
+router.get("/health", fn(req, res) {
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    platform: os.platform(),
+    node: process.version,
+    ntl: "2.1.0"
+  })
+})
+
+// ── Auth Routes ───────────────────────────────────────────────────────────
+
+router.post("/auth/register", fn(req, res) {
+  val body = req.body
+  val result = RegisterSchema.safeParse(body)
+
+  unless result.success {
+    res.status(422).json({ error: true, errors: result.errors })
+    return
+  }
+
+  val existing = db.table("users").where("email", "=", result.data.email).first()
+  if existing {
+    res.status(409).json({ error: true, message: "Email already registered" })
+    return
+  }
+
+  val id = uuid()
+  val hash = hashPassword(result.data.password)
+  val now = new Date().toISOString()
+
+  db.table("users").insert({
+    id_str: id,
+    name: result.data.name,
+    email: result.data.email,
+    password_hash: hash,
+    role: "user",
+    created_at: now,
+    updated_at: now
+  })
+
+  val token = signJWT({ sub: id, email: result.data.email, role: "user" }, SECRET, 86400)
+
+  log.info("User registered:", result.data.email)
+
+  res.status(201).json({
+    message: "Account created",
+    token,
+    user: { id, name: result.data.name, email: result.data.email, role: "user" }
+  })
+})
+
+router.post("/auth/login", fn(req, res) {
+  val body = req.body
+  val result = LoginSchema.safeParse(body)
+
+  unless result.success {
+    res.status(422).json({ error: true, errors: result.errors })
+    return
+  }
+
+  val user = db.table("users").where("email", "=", result.data.email).first()
+
+  guard have user else {
+    res.status(401).json({ error: true, message: "Invalid email or password" })
+    return
+  }
+
+  guard verifyPassword(result.data.password, user.password_hash) else {
+    res.status(401).json({ error: true, message: "Invalid email or password" })
+    return
+  }
+
+  val token = signJWT({ sub: user.id_str, email: user.email, role: user.role }, SECRET, 86400)
+
+  log.info("Login:", user.email)
+
+  res.json({
+    token,
+    user: { id: user.id_str, name: user.name, email: user.email, role: user.role }
+  })
+})
+
+// ── User Routes ───────────────────────────────────────────────────────────
+
+router.get("/users/me", requireAuth, fn(req, res) {
+  val user = db.table("users").where("id_str", "=", req.user.sub).first()
+  guard have user else {
+    res.status(404).json({ error: true, message: "User not found" })
+    return
+  }
+  res.json({
+    id: user.id_str, name: user.name, email: user.email,
+    role: user.role, createdAt: user.created_at
+  })
+})
+
+router.get("/users", requireAdmin, fn(req, res) {
+  val page    = parseInt(req.query.page || "1")
+  val perPage = parseInt(req.query.per_page || "20")
+
+  val result = db.table("users").paginate(page, perPage)
+
+  res.json({
+    data: result.data.map(fn(u) {
+      return { id: u.id_str, name: u.name, email: u.email, role: u.role, createdAt: u.created_at }
+    }),
+    pagination: {
+      page: result.page,
+      perPage: result.perPage,
+      total: result.total,
+      totalPages: result.totalPages,
+      hasNext: result.hasNext,
+      hasPrev: result.hasPrev
+    }
+  })
+})
+
+// ── 404 & Error Handlers ─────────────────────────────────────────────────
+
+router.notFound(fn(req, res) {
+  res.status(404).json({ error: true, message: "Route not found", path: req.path })
+})
+
+router.onError(fn(err, req, res) {
+  log.error("Unhandled error:", err.message)
+  res.status(500).json({ error: true, message: "Internal server error" })
+})
+
+// ── Start ─────────────────────────────────────────────────────────────────
+
+listen(PORT, router, fn(port) {
+  log.info("Server started on http://localhost:{port}")
+  log.info("Endpoints:")
+  log.info("  GET  /health")
+  log.info("  POST /auth/register")
+  log.info("  POST /auth/login")
+  log.info("  GET  /users/me  (requires token)")
+  log.info("  GET  /users     (requires admin token)")
+})

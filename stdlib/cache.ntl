@@ -1,0 +1,140 @@
+// ntl:cache — NTL standard library
+// In-memory LRU cache with TTL and statistics
+// Written in NTL
+
+class CacheEntry {
+  constructor(value, ttl) {
+    this.value      = value
+    this.expiresAt  = ttl ? Date.now() + ttl : null
+    this.accessedAt = Date.now()
+    this.hits       = 0
+  }
+
+  isExpired() {
+    return this.expiresAt !== null && Date.now() > this.expiresAt
+  }
+}
+
+class Cache {
+  constructor(options) {
+    options         = options || {}
+    this._store     = new Map()
+    this._maxSize   = options.maxSize || 1000
+    this._defaultTTL = options.ttl   || null
+    this._stats     = { hits: 0, misses: 0, sets: 0, deletes: 0, evictions: 0 }
+    this._onEvict   = options.onEvict || null
+  }
+
+  set(key, value, ttl) {
+    if (this._store.size >= this._maxSize) {
+      this._evictLRU()
+    }
+    val entry = new CacheEntry(value, ttl !== undefined ? ttl : this._defaultTTL)
+    this._store.set(key, entry)
+    this._stats.sets++
+    return this
+  }
+
+  get(key) {
+    val entry = this._store.get(key)
+    if (!entry) {
+      this._stats.misses++
+      return undefined
+    }
+    if (entry.isExpired()) {
+      this._store.delete(key)
+      this._stats.misses++
+      return undefined
+    }
+    entry.accessedAt = Date.now()
+    entry.hits++
+    this._stats.hits++
+    return entry.value
+  }
+
+  has(key) {
+    val entry = this._store.get(key)
+    if (!entry) {
+      return false
+    }
+    if (entry.isExpired()) {
+      this._store.delete(key)
+      return false
+    }
+    return true
+  }
+
+  delete(key) {
+    val deleted = this._store.delete(key)
+    if (deleted) {
+      this._stats.deletes++
+    }
+    return deleted
+  }
+
+  clear() {
+    this._store.clear()
+    return this
+  }
+
+  size() {
+    return this._store.size
+  }
+
+  keys() {
+    return [...this._store.keys()]
+  }
+
+  stats() {
+    val total   = this._stats.hits + this._stats.misses
+    var hitRate = "0%"
+    if (total > 0) {
+      val pct = Math.round(this._stats.hits / total * 1000) / 10
+      hitRate = pct + "%"
+    }
+    return {
+      hits:      this._stats.hits,
+      misses:    this._stats.misses,
+      sets:      this._stats.sets,
+      deletes:   this._stats.deletes,
+      evictions: this._stats.evictions,
+      size:      this._store.size,
+      hitRate:   hitRate
+    }
+  }
+
+  cleanup() {
+    val now = Date.now()
+    each [key, entry] in this._store {
+      if (entry.expiresAt && now > entry.expiresAt) {
+        this._store.delete(key)
+      }
+    }
+    return this
+  }
+
+  _evictLRU() {
+    var oldest   = null
+    var oldestAt = Infinity
+    each [key, entry] in this._store {
+      if (entry.accessedAt < oldestAt) {
+        oldest   = key
+        oldestAt = entry.accessedAt
+      }
+    }
+    if (oldest !== null) {
+      if (this._onEvict) {
+        this._onEvict(oldest, this._store.get(oldest).value)
+      }
+      this._store.delete(oldest)
+      this._stats.evictions++
+    }
+  }
+}
+
+fn createCache(options) {
+  return new Cache(options)
+}
+
+exports.Cache = Cache
+exports.createCache = createCache

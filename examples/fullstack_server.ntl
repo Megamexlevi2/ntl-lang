@@ -1,0 +1,159 @@
+// NTL Full-Stack Server Example
+// Run: ntl run examples/fullstack_server.ntl
+
+val http       = require("ntl:http")
+val {Database} = require("ntl:db")
+val {Logger}   = require("ntl:logger")
+val {Cache}    = require("ntl:cache")
+val {Env}      = require("ntl:env")
+
+val env   = new Env()
+val PORT  = env.int("PORT", 3000)
+val log   = new Logger({name: "fullstack"})
+val db    = new Database(":memory:")
+val cache = new Cache({ttl: 60000})
+
+// Database setup
+db.createTable("users", (t) => {
+  t.id()
+  t.text("name")
+  t.text("email", {unique: true})
+  t.boolean("active", true)
+})
+
+db.table("users").insertMany([
+  {name: "Alice Johnson", email: "alice@example.com", active: 1},
+  {name: "Bob Smith",     email: "bob@example.com",   active: 1},
+  {name: "Carol White",   email: "carol@example.com",  active: 0}
+])
+
+// Helper: build a simple HTML page (no CSS curly braces in template strings)
+fn buildPage(users) {
+  val active   = users.filter(u => u.active).length
+  val inactive = users.length - active
+
+  val rows = users.map(u => {
+    val statusColor = u.active ? 'green' : 'red'
+    val statusLabel = u.active ? 'Active' : 'Inactive'
+    return [
+      '<tr>',
+      '<td>' + u.name + '</td>',
+      '<td>' + u.email + '</td>',
+      '<td><span class="badge ' + statusColor + '">' + statusLabel + '</span></td>',
+      '</tr>'
+    ].join('')
+  }).join('')
+
+  return [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="UTF-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    '<title>NTL Full-Stack Demo</title>',
+    '<style>',
+    'body { font-family: system-ui, sans-serif; background: #f9fafb; margin: 0; padding: 32px; }',
+    '.wrap { max-width: 700px; margin: 0 auto; }',
+    'h1 { font-size: 2rem; font-weight: 700; margin-bottom: 4px; color: #111827; }',
+    '.sub { color: #6b7280; margin-bottom: 24px; }',
+    '.stats { display: flex; gap: 16px; margin-bottom: 24px; }',
+    '.stat { flex: 1; background: white; padding: 16px 20px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }',
+    '.sv { font-size: 2rem; font-weight: 700; }',
+    '.sl { color: #9ca3af; font-size: 13px; }',
+    'table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.1); }',
+    'th { background: #f3f4f6; padding: 12px 16px; text-align: left; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .05em; }',
+    'td { padding: 12px 16px; }',
+    'tr:not(:last-child) td { border-bottom: 1px solid #f3f4f6; }',
+    '.badge { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; }',
+    '.badge.green { background: #d1fae5; color: #065f46; }',
+    '.badge.red { background: #fee2e2; color: #991b1b; }',
+    '.links { margin-top: 20px; display: flex; gap: 10px; }',
+    'a.btn { display: inline-block; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 14px; text-decoration: none; }',
+    '.primary { background: #3b82f6; color: white; }',
+    '.secondary { background: #e5e7eb; color: #374151; }',
+    '</style>',
+    '</head>',
+    '<body>',
+    '<div class="wrap">',
+    '<h1>NTL Full-Stack Demo</h1>',
+    '<p class="sub">Backend + Frontend in one unified language</p>',
+    '<div class="stats">',
+    '<div class="stat"><div class="sv">' + users.length + '</div><div class="sl">Total Users</div></div>',
+    '<div class="stat"><div class="sv">' + active + '</div><div class="sl">Active</div></div>',
+    '<div class="stat"><div class="sv">' + inactive + '</div><div class="sl">Inactive</div></div>',
+    '</div>',
+    '<table>',
+    '<thead><tr><th>Name</th><th>Email</th><th>Status</th></tr></thead>',
+    '<tbody>' + rows + '</tbody>',
+    '</table>',
+    '<div class="links">',
+    '<a class="btn primary" href="/api/users">View JSON API</a>',
+    '<a class="btn secondary" href="/health">Health Check</a>',
+    '</div>',
+    '</div>',
+    '</body></html>'
+  ].join('\n')
+}
+
+// Router
+val router = new http.Router()
+router.use(http.cors())
+
+// Frontend SSR page
+router.get("/", async (req, res) => {
+  val users = await cache.getOrSet("users:all", async () => {
+    return db.table("users").orderBy("name").all()
+  }, 30000)
+  res.html(buildPage(users))
+})
+
+// REST API — GET all
+router.get("/api/users", (req, res) => {
+  val {page = '1', limit = '20'} = req.query
+  val result = db.table("users").orderBy("name").paginate(parseInt(page), parseInt(limit))
+  res.json(result)
+})
+
+// REST API — GET one
+router.get("/api/users/:id", (req, res) => {
+  val user = db.table("users").find(parseInt(req.params.id))
+  unless user { res.status(404).json({error: "User not found"}); return }
+  res.json({user})
+})
+
+// REST API — POST create
+router.post("/api/users", (req, res) => {
+  val {name, email} = req.body || {}
+  unless name && email { res.status(400).json({error: "name and email required"}); return }
+  val id   = db.table("users").insert({name, email, active: 1})
+  val user = db.table("users").find(id)
+  cache.delete("users:all")
+  res.status(201).json({user})
+})
+
+// REST API — DELETE
+router.delete("/api/users/:id", (req, res) => {
+  val n = db.table("users").where("id", req.params.id).delete()
+  unless n { res.status(404).json({error: "User not found"}); return }
+  cache.delete("users:all")
+  res.json({deleted: true})
+})
+
+// Health check
+router.get("/health", (req, res) => {
+  res.json({
+    status:  "ok",
+    version: "2.1.0",
+    uptime:  process.uptime(),
+    users:   db.table("users").count()
+  })
+})
+
+// Start server
+http.listen(PORT, router, () => {
+  log.info("Full-stack server running at http://localhost:{PORT}")
+  log.info("  GET  /             HTML page (SSR)")
+  log.info("  GET  /api/users    JSON REST API")
+  log.info("  POST /api/users    Create user")
+  log.info("  GET  /health       Health check")
+})

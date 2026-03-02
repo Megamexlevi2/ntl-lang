@@ -1,0 +1,221 @@
+class ValidationError extends Error {
+  constructor(message, path, value) {
+    super(message)
+    this.name  = "ValidationError"
+    this.path  = path  || []
+    this.value = value
+  }
+}
+
+fn typeOf(v) {
+  if (v === null) { return "null" }
+  if (Array.isArray(v)) { return "array" }
+  return typeof v
+}
+
+fn pathStr(path) {
+  if (!path || path.length === 0) { return "value" }
+  return path.join(".")
+}
+
+class Schema {
+  constructor(check) {
+    this._check    = check
+    this._optional = false
+    this._default  = undefined
+  }
+
+  optional() {
+    val s       = new Schema(this._check)
+    s._optional = true
+    s._default  = this._default
+    return s
+  }
+
+  default(value) {
+    val s       = new Schema(this._check)
+    s._optional = true
+    s._default  = value
+    return s
+  }
+
+  parse(value, path) {
+    path = path || []
+    if (value === undefined || value === null) {
+      if (this._optional) {
+        if (this._default !== undefined) { return this._default }
+        return value
+      }
+      throw new ValidationError(pathStr(path) + " is required", path, value)
+    }
+    return this._check(value, path)
+  }
+
+  safeParse(value) {
+    try {
+      val data = this.parse(value)
+      return { ok: true, data, error: null }
+    } catch (err) {
+      return { ok: false, data: null, error: err.message }
+    }
+  }
+}
+
+fn makeSchema(check) {
+  return new Schema(check)
+}
+
+fn string() {
+  return makeSchema((v, path) => {
+    if (typeof v !== "string") {
+      throw new ValidationError(pathStr(path) + " must be a string, got " + typeOf(v), path, v)
+    }
+    return v
+  })
+}
+
+fn number() {
+  return makeSchema((v, path) => {
+    if (typeof v !== "number" || isNaN(v)) {
+      throw new ValidationError(pathStr(path) + " must be a number", path, v)
+    }
+    return v
+  })
+}
+
+fn int() {
+  return makeSchema((v, path) => {
+    if (typeof v !== "number" || !Number.isInteger(v)) {
+      throw new ValidationError(pathStr(path) + " must be an integer", path, v)
+    }
+    return v
+  })
+}
+
+fn bool() {
+  return makeSchema((v, path) => {
+    if (typeof v !== "boolean") {
+      throw new ValidationError(pathStr(path) + " must be a boolean", path, v)
+    }
+    return v
+  })
+}
+
+fn array(itemSchema) {
+  return makeSchema((v, path) => {
+    if (!Array.isArray(v)) {
+      throw new ValidationError(pathStr(path) + " must be an array", path, v)
+    }
+    if (itemSchema) {
+      return v.map((item, i) => itemSchema.parse(item, [...path, i]))
+    }
+    return v
+  })
+}
+
+fn object(shape) {
+  return makeSchema((v, path) => {
+    if (typeof v !== "object" || v === null || Array.isArray(v)) {
+      throw new ValidationError(pathStr(path) + " must be an object", path, v)
+    }
+    if (!shape) { return v }
+    val result = {}
+    each key in Object.keys(shape) {
+      result[key] = shape[key].parse(v[key], [...path, key])
+    }
+    return result
+  })
+}
+
+fn literal(expected) {
+  return makeSchema((v, path) => {
+    if (v !== expected) {
+      throw new ValidationError(pathStr(path) + " must be " + JSON.stringify(expected), path, v)
+    }
+    return v
+  })
+}
+
+fn oneOf(values) {
+  return makeSchema((v, path) => {
+    if (!values.includes(v)) {
+      throw new ValidationError(
+        pathStr(path) + " must be one of [" + values.map(x => JSON.stringify(x)).join(", ") + "]",
+        path, v
+      )
+    }
+    return v
+  })
+}
+
+fn email() {
+  return makeSchema((v, path) => {
+    if (typeof v !== "string" || !v.includes("@") || !v.includes(".")) {
+      throw new ValidationError(pathStr(path) + " must be a valid email", path, v)
+    }
+    return v.toLowerCase().trim()
+  })
+}
+
+fn minLength(min) {
+  return (schema) => makeSchema((v, path) => {
+    val r = schema.parse(v, path)
+    if ((typeof r === "string" || Array.isArray(r)) && r.length < min) {
+      throw new ValidationError(pathStr(path) + " must be at least " + min + " characters", path, v)
+    }
+    return r
+  })
+}
+
+fn maxLength(max) {
+  return (schema) => makeSchema((v, path) => {
+    val r = schema.parse(v, path)
+    if ((typeof r === "string" || Array.isArray(r)) && r.length > max) {
+      throw new ValidationError(pathStr(path) + " must be at most " + max + " characters", path, v)
+    }
+    return r
+  })
+}
+
+fn min(minimum) {
+  return (schema) => makeSchema((v, path) => {
+    val r = schema.parse(v, path)
+    if (typeof r === "number" && r < minimum) {
+      throw new ValidationError(pathStr(path) + " must be >= " + minimum, path, v)
+    }
+    return r
+  })
+}
+
+fn max(maximum) {
+  return (schema) => makeSchema((v, path) => {
+    val r = schema.parse(v, path)
+    if (typeof r === "number" && r > maximum) {
+      throw new ValidationError(pathStr(path) + " must be <= " + maximum, path, v)
+    }
+    return r
+  })
+}
+
+fn pipe(schema, ...fns) {
+  var s = schema
+  each transform in fns { s = transform(s) }
+  return s
+}
+
+exports.Schema = Schema
+exports.ValidationError = ValidationError
+exports.string = string
+exports.number = number
+exports.int = int
+exports.bool = bool
+exports.array = array
+exports.object = object
+exports.literal = literal
+exports.oneOf = oneOf
+exports.email = email
+exports.minLength = minLength
+exports.maxLength = maxLength
+exports.min = min
+exports.max = max
+exports.pipe = pipe

@@ -1,0 +1,19 @@
+val message = "Hello, World!"
+console.log(message)
+
+fn greet(name = "stranger") {
+  return "Hello, " + name + "!"
+}
+
+console.log(greet("NTL"))
+console.log(greet())
+
+val numbers = [1, 2, 3, 4, 5]
+val doubled = numbers.map(x => x * 2)
+val evens = numbers.filter(x => x % 2 === 0)
+
+console.log("Doubled:", doubled)
+console.log("Evens:", evens)
+
+val total = numbers.reduce((acc, x) => acc + x, 0)
+console.log("Sum:", total)

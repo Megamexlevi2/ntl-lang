@@ -1,0 +1,122 @@
+// NTL v2 — Feature Demo
+// Run: ntl run examples/demo_v2.ntl
+
+// ── 1. log keyword ──────────────────────────────────────────────
+log "=== NTL v2 Feature Demo ===\n"
+
+// ── 2. assert ───────────────────────────────────────────────────
+val version = "2.0.0"
+assert version.startsWith("2"), "Must be v2"
+log "assert: OK"
+
+// ── 3. repeat ───────────────────────────────────────────────────
+val ticks = []
+repeat 5 {
+  ticks.push(ticks.length)
+}
+assert ticks.length === 5, "repeat must run 5 times"
+log "repeat:", ticks
+
+// ── 4. range + each ─────────────────────────────────────────────
+val evens = range(0, 10, 2)
+log "range(0,10,2):", evens
+
+val sum = 0
+each n in evens {
+  sum += n
+}
+log "sum of evens:", sum  // 0+2+4+6+8 = 20
+assert sum === 20, "sum should be 20"
+
+// ── 5. guard ────────────────────────────────────────────────────
+fn safeDivide(a, b) {
+  guard b !== 0 else {
+    return "error: division by zero"
+  }
+  return a / b
+}
+log "10/2 =", safeDivide(10, 2)
+log "10/0 =", safeDivide(10, 0)
+
+// ── 6. ifhave / ifset ───────────────────────────────────────────
+val maybeNull = null
+val maybeValue = 42
+
+ifhave maybeNull as v {
+  log "ifhave: got", v
+} else {
+  log "ifhave: value is null/undefined/false — skipped"
+}
+
+ifset maybeValue as v {
+  log "ifset: got", v
+}
+
+// ── 7. try? safe expression ─────────────────────────────────────
+val parsed = try? JSON.parse('{"ok":true}')
+val badParsed = try? JSON.parse("not json at all")
+log "try? good:", parsed
+log "try? bad:", badParsed   // null — no crash
+
+// ── 8. Not keyword ──────────────────────────────────────────────
+val active = false
+if Not(active) {
+  log "Not: correctly detected inactive state"
+}
+
+// ── 9. have keyword ─────────────────────────────────────────────
+val data = { name: "NTL" }
+if have data.name {
+  log "have: field exists:", data.name
+}
+
+// ── 10. match with patterns ─────────────────────────────────────
+fn describe(x) {
+  match x {
+    case 0          => { return "zero" }
+    case 1          => { return "one" }
+    case n when n < 0 => { return "negative" }
+    default         => { return "something else" }
+  }
+}
+log "match(0):", describe(0)
+log "match(1):", describe(1)
+log "match(-5):", describe(-5)
+log "match(99):", describe(99)
+
+// ── 11. pipeline ────────────────────────────────────────────────
+val doubled = range(5) |> (arr => arr.map(x => x * 2))
+log "pipeline:", doubled
+
+// ── 12. namespace ───────────────────────────────────────────────
+namespace Math2 {
+  fn clamp(v, min, max) {
+    if v < min { return min }
+    if v > max { return max }
+    return v
+  }
+  fn lerp(a, b, t) {
+    return a + (b - a) * t
+  }
+}
+log "clamp(15,0,10):", Math2.clamp(15, 0, 10)
+log "lerp(0,100,0.5):", Math2.lerp(0, 100, 0.5)
+
+// ── 13. Template strings (NTL-style "{expr}") ───────────────────
+val name = "developer"
+val greeting = "Hello, {name}! You are using NTL v{version}"
+log greeting
+
+// ── 14. Destructuring ───────────────────────────────────────────
+val {x, y} = {x: 10, y: 20}
+val [first, second, ...rest] = [1, 2, 3, 4, 5]
+log "destructure obj:", x, y
+log "destructure arr:", first, second, rest
+
+// ── 15. unless ──────────────────────────────────────────────────
+val ready = false
+unless ready {
+  log "unless: not ready yet"
+}
+
+log "\n=== All features working! ==="

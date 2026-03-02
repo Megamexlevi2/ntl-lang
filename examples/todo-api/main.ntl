@@ -1,0 +1,259 @@
+// Todo API — Production NTL example
+// A complete REST API with database, validation, caching, and auth
+
+const require(ntl, http)
+const require(ntl, db)
+const require(ntl, validate)
+const require(ntl, cache)
+const require(ntl, crypto)
+const require(ntl, logger)
+const require(ntl, env)
+
+// ── Config ───────────────────────────────────────────────────────
+val PORT    = env.int("PORT", 3000)
+val JWT_SECRET = env.str("JWT_SECRET", "dev-secret-change-in-prod")
+val NODE_ENV = env.str("NODE_ENV", "development")
+
+val log = logger.create({ name: "todo-api", level: 0 })
+
+// ── Database ─────────────────────────────────────────────────────
+val database = db.connect("./data/todos.db")
+
+database.createTable("users", fn(t) {
+  t.id()
+  t.text("email", { unique: true })
+  t.text("password_hash")
+  t.text("name")
+  t.boolean("active", true)
+  t.timestamps()
+})
+
+database.createTable("todos", fn(t) {
+  t.id()
+  t.integer("user_id")
+  t.text("title")
+  t.text("description", { nullable: true })
+  t.boolean("done", false)
+  t.text("priority", { default: "normal" })
+  t.timestamps()
+  t.references("user_id", "users", "id")
+})
+
+val Users = database.model("users", {
+  hidden: ["password_hash"]
+})
+
+val Todos = database.model("todos")
+
+// ── Validation Schemas ────────────────────────────────────────────
+val { v } = validate
+
+val registerSchema = v.object({
+  email:    v.email("invalid email"),
+  password: v.string().min(8, "password needs 8+ chars"),
+  name:     v.string().min(1).max(100)
+})
+
+val loginSchema = v.object({
+  email:    v.email(),
+  password: v.string().min(1)
+})
+
+val todoSchema = v.object({
+  title:       v.string().min(1, "title required").max(200),
+  description: v.string().max(1000).optional(),
+  priority:    v.string().oneOf(["low", "normal", "high"]).optional()
+})
+
+// ── Auth Middleware ───────────────────────────────────────────────
+fn authMiddleware(req, res, next) {
+  val token = req.headers["authorization"]?.replace("Bearer ", "")
+  guard token else {
+    res.status(401).json({ error: "Unauthorized" })
+    return
+  }
+  val payload = try? crypto.verifyJWT(token, JWT_SECRET)
+  guard payload else {
+    res.status(401).json({ error: "Invalid or expired token" })
+    return
+  }
+  req.userId = payload.userId
+  next()
+}
+
+// ── Cache ─────────────────────────────────────────────────────────
+val todoCache = cache.ns("todos")
+
+// ── Router ────────────────────────────────────────────────────────
+val router = new http.Router()
+
+router.use(http.cors())
+
+// Health check
+router.get("/health", fn(req, res) {
+  res.json({ status: "ok", env: NODE_ENV, uptime: process.uptime() })
+})
+
+// ── Auth routes ──────────────────────────────────────────────────
+router.post("/auth/register", async fn(req, res) {
+  val result = registerSchema.safeParse(req.body)
+  unless result.success {
+    res.status(400).json({ error: "Validation failed", details: result.errors })
+    return
+  }
+  val { email, password, name } = result.data
+  guard Not(Users.exists("email", email)) else {
+    res.status(409).json({ error: "Email already registered" })
+    return
+  }
+  val user = Users.create({
+    email,
+    password_hash: crypto.hashPassword(password),
+    name
+  })
+  val token = crypto.signJWT({ userId: user.id, email: user.email }, JWT_SECRET, 86400)
+  log.info("User registered:", email)
+  res.status(201).json({ user, token })
+})
+
+router.post("/auth/login", async fn(req, res) {
+  val result = loginSchema.safeParse(req.body)
+  unless result.success {
+    res.status(400).json({ error: "Invalid request" })
+    return
+  }
+  val { email, password } = result.data
+  val user = database.table("users").where("email", "=", email).first()
+  guard user else {
+    res.status(401).json({ error: "Invalid credentials" })
+    return
+  }
+  guard crypto.verifyPassword(password, user.password_hash) else {
+    res.status(401).json({ error: "Invalid credentials" })
+    return
+  }
+  val token = crypto.signJWT({ userId: user.id, email: user.email }, JWT_SECRET, 86400)
+  log.info("User logged in:", email)
+  res.json({ token, userId: user.id })
+})
+
+// ── Todo routes ──────────────────────────────────────────────────
+router.use(authMiddleware)
+
+router.get("/todos", async fn(req, res) {
+  val page    = parseInt(req.query.page ?? "1")
+  val perPage = parseInt(req.query.perPage ?? "20")
+  val done    = req.query.done
+  val cacheKey = "user:" + req.userId + ":page:" + page
+
+  val cached = todoCache.get(cacheKey)
+  ifset cached as data {
+    res.json(data)
+    return
+  }
+
+  var q = database.table("todos").where("user_id", "=", req.userId)
+  ifset done as d {
+    q = q.where("done", "=", d === "true" ? 1 : 0)
+  }
+  q = q.orderBy("created_at", "DESC")
+
+  val result = q.paginate(page, perPage)
+  todoCache.set(cacheKey, result, 30000)
+  res.json(result)
+})
+
+router.get("/todos/:id", async fn(req, res) {
+  val todo = Todos.find(parseInt(req.params.id))
+  guard todo else {
+    res.status(404).json({ error: "Todo not found" })
+    return
+  }
+  guard todo.user_id === req.userId else {
+    res.status(403).json({ error: "Access denied" })
+    return
+  }
+  res.json(todo)
+})
+
+router.post("/todos", async fn(req, res) {
+  val result = todoSchema.safeParse(req.body)
+  unless result.success {
+    res.status(400).json({ error: "Validation failed", details: result.errors })
+    return
+  }
+  val todo = Todos.create({
+    ...result.data,
+    user_id: req.userId,
+    priority: result.data.priority ?? "normal"
+  })
+  todoCache.deletePattern("user:" + req.userId + ":")
+  log.info("Todo created:", todo.id, "by user:", req.userId)
+  res.status(201).json(todo)
+})
+
+router.put("/todos/:id", async fn(req, res) {
+  val id = parseInt(req.params.id)
+  val todo = Todos.find(id)
+  guard todo else { res.status(404).json({ error: "Not found" }); return }
+  guard todo.user_id === req.userId else { res.status(403).json({ error: "Forbidden" }); return }
+  val result = todoSchema.partial().safeParse(req.body)
+  unless result.success {
+    res.status(400).json({ error: "Validation failed", details: result.errors })
+    return
+  }
+  val updated = Todos.update(id, result.data)
+  todoCache.deletePattern("user:" + req.userId + ":")
+  res.json(updated)
+})
+
+router.delete("/todos/:id", async fn(req, res) {
+  val id = parseInt(req.params.id)
+  val todo = Todos.find(id)
+  guard todo else { res.status(404).json({ error: "Not found" }); return }
+  guard todo.user_id === req.userId else { res.status(403).json({ error: "Forbidden" }); return }
+  Todos.delete(id)
+  todoCache.deletePattern("user:" + req.userId + ":")
+  res.status(204).send("")
+})
+
+router.patch("/todos/:id/done", async fn(req, res) {
+  val id = parseInt(req.params.id)
+  val todo = Todos.find(id)
+  guard todo else { res.status(404).json({ error: "Not found" }); return }
+  guard todo.user_id === req.userId else { res.status(403).json({ error: "Forbidden" }); return }
+  val updated = Todos.update(id, { done: Not(todo.done) })
+  todoCache.deletePattern("user:" + req.userId + ":")
+  res.json(updated)
+})
+
+// ── Stats ────────────────────────────────────────────────────────
+router.get("/todos/stats", async fn(req, res) {
+  val uid = req.userId
+  val total  = database.table("todos").where("user_id","=",uid).count()
+  val done   = database.table("todos").where("user_id","=",uid).where("done","=",1).count()
+  val byPriority = {
+    high:   database.table("todos").where("user_id","=",uid).where("priority","=","high").count(),
+    normal: database.table("todos").where("user_id","=",uid).where("priority","=","normal").count(),
+    low:    database.table("todos").where("user_id","=",uid).where("priority","=","low").count()
+  }
+  res.json({ total, done, pending: total - done, byPriority })
+})
+
+// ── Error handler ────────────────────────────────────────────────
+router.notFound(fn(req, res) {
+  res.status(404).json({ error: "Route not found", path: req.url })
+})
+
+router.onError(fn(err, req, res) {
+  log.error("Request error:", err.message, req.method, req.url)
+  res.status(500).json({ error: "Internal server error" })
+})
+
+// ── Start ─────────────────────────────────────────────────────────
+val server = http.createServer(router)
+server.listen(PORT, fn() {
+  log.info("Todo API running on http://localhost:" + PORT)
+  log.info("Environment:", NODE_ENV)
+  log.info("Database:", database.file)
+})

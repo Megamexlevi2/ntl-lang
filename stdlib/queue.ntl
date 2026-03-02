@@ -1,0 +1,127 @@
+val { createEmitter } = require("ntl:events")
+
+class Job {
+  constructor(id, data, opts) {
+    this.id         = id
+    this.data       = data
+    this.attempts   = 0
+    this.maxRetries = opts.retries || 3
+    this.delay      = opts.delay   || 0
+    this.priority   = opts.priority || 0
+    this.createdAt  = Date.now()
+    this.status     = "pending"
+    this.error      = null
+  }
+}
+
+class Queue {
+  constructor(name, opts) {
+    opts             = opts || {}
+    this.name        = name || "default"
+    this.concurrency = opts.concurrency || 1
+    this._jobs       = []
+    this._running    = 0
+    this._counter    = 0
+    this._handler    = null
+    this._paused     = false
+    this._events     = createEmitter()
+    this._stats      = { processed: 0, failed: 0, retried: 0 }
+  }
+
+  process(handler) {
+    this._handler = handler
+    this._tick()
+    return this
+  }
+
+  add(data, opts) {
+    opts = opts || {}
+    this._counter++
+    val job = new Job(String(this._counter), data, opts)
+    if (opts.delay && opts.delay > 0) {
+      setTimeout(() => {
+        this._jobs.push(job)
+        this._jobs.sort((a, b) => b.priority - a.priority)
+        this._tick()
+      }, opts.delay)
+    } else {
+      this._jobs.push(job)
+      this._jobs.sort((a, b) => b.priority - a.priority)
+      this._tick()
+    }
+    return job
+  }
+
+  pause() {
+    this._paused = true
+    return this
+  }
+
+  resume() {
+    this._paused = false
+    this._tick()
+    return this
+  }
+
+  size() {
+    return this._jobs.length
+  }
+
+  stats() {
+    return Object.assign({}, this._stats, {
+      running: this._running,
+      pending: this._jobs.length
+    })
+  }
+
+  on(event, handler) {
+    this._events.on(event, handler)
+    return this
+  }
+
+  _tick() {
+    if (this._paused) { return }
+    if (!this._handler) { return }
+    while (this._running < this.concurrency && this._jobs.length > 0) {
+      val job = this._jobs.shift()
+      this._runJob(job)
+    }
+  }
+
+  async _runJob(job) {
+    this._running++
+    job.status   = "running"
+    job.attempts++
+    try {
+      val result = await this._handler(job.data, job)
+      job.status = "done"
+      this._stats.processed++
+      this._events.emit("completed", job, result)
+    } catch (err) {
+      job.error = err.message
+      if (job.attempts < job.maxRetries) {
+        job.status = "pending"
+        this._stats.retried++
+        this._events.emit("retry", job, err)
+        val backoff = Math.pow(2, job.attempts) * 500
+        setTimeout(() => {
+          this._jobs.push(job)
+          this._tick()
+        }, backoff)
+      } else {
+        job.status = "failed"
+        this._stats.failed++
+        this._events.emit("failed", job, err)
+      }
+    }
+    this._running--
+    this._tick()
+  }
+}
+
+fn createQueue(name, opts) {
+  return new Queue(name, opts)
+}
+
+exports.Queue = Queue
+exports.createQueue = createQueue

@@ -1,0 +1,102 @@
+// ntl:logger — NTL standard library
+// Structured logging with levels, transports, child loggers
+// Written in NTL
+
+val LEVELS = { silent: 0, error: 1, warn: 2, info: 3, debug: 4, trace: 5 }
+val LEVEL_COLORS = {
+  error: "\x1b[31m",
+  warn:  "\x1b[33m",
+  info:  "\x1b[36m",
+  debug: "\x1b[90m",
+  trace: "\x1b[35m",
+  reset: "\x1b[0m"
+}
+
+fn ts() {
+  return new Date().toISOString()
+}
+
+fn levelLabel(levelName) {
+  val padded = levelName.toUpperCase().padEnd(5)
+  val color  = LEVEL_COLORS[levelName] || ""
+  return `${color}${padded}${LEVEL_COLORS.reset}`
+}
+
+class Logger {
+  constructor(options) {
+    options       = options || {}
+    this.name     = options.name   || "app"
+    this.level    = LEVELS[options.level || "info"] !== undefined ? LEVELS[options.level || "info"] : 3
+    this.pretty   = options.pretty !== false
+    this.fields   = options.fields || {}
+    this._stream  = null
+    if (options.file) {
+      val nodeFs = require("fs")
+      this._stream = nodeFs.createWriteStream(options.file, { flags: "a" })
+    }
+  }
+
+  _shouldLog(levelName) {
+    return (LEVELS[levelName] || 0) <= this.level
+  }
+
+  _write(levelName, msg, data) {
+    if (!this._shouldLog(levelName)) {
+      return
+    }
+    val entry = Object.assign({
+      time:  ts(),
+      level: levelName,
+      name:  this.name,
+      msg:   msg
+    }, this.fields, data || {})
+
+    if (this.pretty) {
+      val prefix = `${LEVEL_COLORS[levelName] || ""}[${entry.time.slice(11, 19)}]${LEVEL_COLORS.reset} ${levelLabel(levelName)} ${entry.name}`
+      val extra  = Object.keys(data || {}).length > 0 ? " " + JSON.stringify(data) : ""
+      process.stderr.write(`${prefix}  ${msg}${extra}\n`)
+    } else {
+      process.stderr.write(JSON.stringify(entry) + "\n")
+    }
+
+    if (this._stream) {
+      this._stream.write(JSON.stringify(entry) + "\n")
+    }
+  }
+
+  child(extraFields) {
+    val levelName = Object.keys(LEVELS).find(k => LEVELS[k] === this.level) || "info"
+    return new Logger({
+      name:   this.name,
+      level:  levelName,
+      pretty: this.pretty,
+      fields: Object.assign({}, this.fields, extraFields)
+    })
+  }
+
+  error(msg, data) { this._write("error", msg, data) }
+  warn(msg, data)  { this._write("warn",  msg, data) }
+  info(msg, data)  { this._write("info",  msg, data) }
+  debug(msg, data) { this._write("debug", msg, data) }
+  trace(msg, data) { this._write("trace", msg, data) }
+
+  time(label) {
+    val start = Date.now()
+    val self  = this
+    return {
+      end: (msg, data) => {
+        self.info(msg || label, Object.assign({ ms: Date.now() - start }, data || {}))
+      }
+    }
+  }
+}
+
+fn createLogger(options) {
+  return new Logger(options)
+}
+
+val defaultLogger = new Logger({ name: "ntl" })
+
+exports.Logger        = Logger
+exports.createLogger  = createLogger
+exports.logger        = defaultLogger
