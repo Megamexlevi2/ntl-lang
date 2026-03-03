@@ -1,6 +1,6 @@
 <div align="center">
 
-# NTL Language — v2.1
+# NTL Language — v3.0.0
 
 **A full-stack programming language that compiles to JavaScript.**  
 Write your backend API, database layer, and frontend UI components in one clean, expressive syntax.
