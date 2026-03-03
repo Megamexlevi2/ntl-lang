@@ -10,7 +10,7 @@ Write your backend API, database layer, and frontend UI components in one clean,
 [![Tests: 74/74](https://img.shields.io/badge/tests-74%2F74%20passing-brightgreen)](#)
 [[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
-*Created by David Dev — [github.com/Megamexlerei2/ntl-lang](https://github.com/Megamexlerei2/ntl-lang)*
+*Created by David Dev — [github.com/Megamexlevi2/ntl-lang](https://github.com/Megamexlevi2/ntl-lang)*
 
 </div>
 
@@ -61,7 +61,7 @@ npm install -g @david0dev/ntl-lang
 Or clone and run directly:
 
 ```bash
-git clone https://github.com/Megamexlerei2/ntl-lang
+git clone https://github.com/Megamexlevi2/ntl-lang
 cd ntl-lang
 node main.js run examples/fullstack_server.ntl
 ```
@@ -1847,4 +1847,4 @@ http.listen(3000, router, () => log.info("AI API at http://localhost:3000"))
 
 Apache License © 2026 David Dev
 
-GitHub: [github.com/Megamexlerei2/ntl-lang](https://github.com/Megamexlerei2/ntl-lang)
+GitHub: [github.com/Megamexlevi2/ntl-lang](https://github.com/Megamexlevi2/ntl-lang)

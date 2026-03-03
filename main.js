@@ -2,7 +2,7 @@
 'use strict';
 
 // Created by David Dev
-// GitHub: https://github.com/Megamexlerei2/ntl-lang
+// GitHub: https://github.com/Megamexlevi/ntl-lang
 // (c) David Dev 2026. All rights reserved.
 
 const fs   = require('fs');

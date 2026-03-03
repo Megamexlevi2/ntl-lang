@@ -1,0 +1,58 @@
+{
+  "name": "@david0dev/ntl-lang",
+  "version": "3.0.1",
+  "description": "NTL \u2014 A programming language for teams that ship. Fast, typed, Node.js compatible.",
+  "author": "David Dev <github.com/Megamexlevi2>",
+  "license": "Apache-2.0",
+  "main": "main.js",
+  "bin": {
+    "ntl": "./main.js"
+  },
+  "scripts": {
+    "start": "node main.js",
+    "repl": "node main.js repl",
+    "test": "node main.js run tests/all.ntl",
+    "demo": "node main.js run examples/demo_v2.ntl",
+    "ide": "node main.js ide",
+    "jit": "node main.js jit",
+    "wasm": "node main.js wasm",
+    "native": "node main.js native",
+    "tutorial": "node tutorial.js",
+    "eval": "node main.js -e"
+  },
+  "keywords": [
+    "ntl",
+    "ntl-lang",
+    "language",
+    "compiler",
+    "transpiler",
+    "typescript-alternative",
+    "javascript",
+    "node",
+    "production",
+    "database",
+    "http",
+    "server",
+    "jwt",
+    "sqlite",
+    "validation",
+    "jit",
+    "wasm",
+    "webassembly",
+    "native",
+    "terminal-ide",
+    "multi-arch",
+    "aot",
+    "hot-path"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Megamexlevi2/ntl-lang"
+  },
+  "homepage": "https://github.com/Megamexlevi2/ntl-lang#readme",
+  "dependencies": {},
+  "devDependencies": {}
+}
