@@ -1,3 +1,13 @@
+
+---
+
+## License
+
+Apache License © 2026 David Dev
+
+GitHub: [github.com/Megamexlevi2/ntl-lang](https://github.com/Megamexlevi2/ntl-lang)
+
+
 <div align="center">
 
 # NTL Language — v3.0.0
