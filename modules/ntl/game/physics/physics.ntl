@@ -1,0 +1,206 @@
+class RigidBody {
+  constructor(opts) {
+    opts             = opts || {}
+    this.x           = opts.x || 0
+    this.y           = opts.y || 0
+    this.z           = opts.z || 0
+    this.vx          = opts.vx || 0
+    this.vy          = opts.vy || 0
+    this.vz          = opts.vz || 0
+    this.ax          = 0
+    this.ay          = 0
+    this.az          = 0
+    this.mass        = opts.mass  || 1
+    this.invMass     = (opts.mass === 0 || opts.isStatic) ? 0 : 1 / (opts.mass || 1)
+    this.friction    = opts.friction    || 0.98
+    this.restitution = opts.restitution || 0.3
+    this.isStatic    = opts.isStatic    || false
+    this.useGravity  = (opts.useGravity === undefined) ? true : opts.useGravity
+    this.collider    = opts.collider    || null
+    this.node        = opts.node        || null
+    this._forceX     = 0
+    this._forceY     = 0
+    this._forceZ     = 0
+    this.angVX       = 0
+    this.angVY       = 0
+    this.angVZ       = 0
+    this.rotX        = 0
+    this.rotY        = 0
+    this.rotZ        = 0
+  }
+  applyForce(fx, fy, fz) {
+    if (this.isStatic) { return }
+    this._forceX += fx
+    this._forceY += fy
+    this._forceZ += fz
+  }
+  applyImpulse(ix, iy, iz) {
+    if (this.isStatic) { return }
+    this.vx += ix * this.invMass
+    this.vy += iy * this.invMass
+    this.vz += iz * this.invMass
+  }
+  setVelocity(x, y, z) {
+    this.vx = x; this.vy = y; this.vz = z
+  }
+  setPosition(x, y, z) {
+    this.x = x; this.y = y; this.z = z
+    if (this.node) { this.node.transform.setPosition(x, y, z) }
+  }
+}
+
+class BoxCollider {
+  constructor(hx, hy, hz) {
+    this.type = 'box'
+    this.hx = hx || 0.5
+    this.hy = hy || 0.5
+    this.hz = hz || 0.5
+  }
+}
+
+class SphereCollider {
+  constructor(radius) {
+    this.type   = 'sphere'
+    this.radius = radius || 0.5
+  }
+}
+
+class PhysicsWorld {
+  constructor(opts) {
+    opts          = opts || {}
+    this.gravity  = opts.gravity || { x: 0, y: -9.81, z: 0 }
+    this.bodies   = []
+    this._substeps = opts.substeps || 2
+  }
+  addBody(body) {
+    this.bodies.push(body)
+    return body
+  }
+  removeBody(body) {
+    val idx = this.bodies.indexOf(body)
+    if (idx >= 0) { this.bodies.splice(idx, 1) }
+  }
+  createBody(opts) {
+    val body = new RigidBody(opts)
+    this.addBody(body)
+    return body
+  }
+  step(dt) {
+    val invSub = dt / this._substeps
+    var sub = 0
+    while (sub < this._substeps) {
+      this._integrate(invSub)
+      this._resolveCollisions()
+      sub++
+    }
+  }
+  _integrate(dt) {
+    each body in this.bodies {
+      if (body.isStatic) { continue }
+      if (body.useGravity) {
+        body._forceY += this.gravity.y * body.mass
+      }
+      body.ax = body._forceX * body.invMass
+      body.ay = body._forceY * body.invMass
+      body.az = body._forceZ * body.invMass
+      body._forceX = 0; body._forceY = 0; body._forceZ = 0
+
+      body.vx = (body.vx + body.ax * dt) * body.friction
+      body.vy =  body.vy + body.ay * dt
+      body.vz = (body.vz + body.az * dt) * body.friction
+
+      body.x += body.vx * dt
+      body.y += body.vy * dt
+      body.z += body.vz * dt
+
+      body.rotX += body.angVX * dt
+      body.rotY += body.angVY * dt
+      body.rotZ += body.angVZ * dt
+
+      if (body.node) {
+        body.node.transform.setPosition(body.x, body.y, body.z)
+        body.node.transform.setRotation(body.rotX, body.rotY, body.rotZ)
+      }
+    }
+  }
+  _resolveCollisions() {
+    var i = 0
+    while (i < this.bodies.length) {
+      val a = this.bodies[i]
+      if (!a.collider) { i++; continue }
+      var j = i + 1
+      while (j < this.bodies.length) {
+        val b = this.bodies[j]
+        if (!b.collider) { j++; continue }
+        val col = this._checkCollision(a, b)
+        if (col) { this._resolveCollision(a, b, col) }
+        j++
+      }
+      i++
+    }
+  }
+  _checkCollision(a, b) {
+    if (a.collider.type === 'sphere' && b.collider.type === 'sphere') {
+      val dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z
+      val dist = Math.sqrt(dx*dx+dy*dy+dz*dz)
+      val minD = a.collider.radius + b.collider.radius
+      if (dist < minD && dist > 0.0001) {
+        return { nx: dx/dist, ny: dy/dist, nz: dz/dist, depth: minD - dist }
+      }
+    }
+    if (a.collider.type === 'box' && b.collider.type === 'box') {
+      val overX = (a.collider.hx + b.collider.hx) - Math.abs(b.x - a.x)
+      val overY = (a.collider.hy + b.collider.hy) - Math.abs(b.y - a.y)
+      val overZ = (a.collider.hz + b.collider.hz) - Math.abs(b.z - a.z)
+      if (overX > 0 && overY > 0 && overZ > 0) {
+        if (overX < overY && overX < overZ) {
+          val s = b.x > a.x ? 1 : -1
+          return { nx: s, ny: 0, nz: 0, depth: overX }
+        } else if (overY < overZ) {
+          val s = b.y > a.y ? 1 : -1
+          return { nx: 0, ny: s, nz: 0, depth: overY }
+        } else {
+          val s = b.z > a.z ? 1 : -1
+          return { nx: 0, ny: 0, nz: s, depth: overZ }
+        }
+      }
+    }
+    return null
+  }
+  _resolveCollision(a, b, col) {
+    val totalInvMass = a.invMass + b.invMass
+    if (totalInvMass < 0.00001) { return }
+
+    val rel = (b.vx - a.vx) * col.nx + (b.vy - a.vy) * col.ny + (b.vz - a.vz) * col.nz
+    if (rel > 0) { return }
+
+    val e     = Math.min(a.restitution, b.restitution)
+    val j     = -(1 + e) * rel / totalInvMass
+
+    a.vx -= j * a.invMass * col.nx
+    a.vy -= j * a.invMass * col.ny
+    a.vz -= j * a.invMass * col.nz
+    b.vx += j * b.invMass * col.nx
+    b.vy += j * b.invMass * col.ny
+    b.vz += j * b.invMass * col.nz
+
+    val correction = col.depth / totalInvMass * 0.8
+    if (!a.isStatic) {
+      a.x -= correction * a.invMass * col.nx
+      a.y -= correction * a.invMass * col.ny
+      a.z -= correction * a.invMass * col.nz
+      if (a.node) { a.node.transform.setPosition(a.x, a.y, a.z) }
+    }
+    if (!b.isStatic) {
+      b.x += correction * b.invMass * col.nx
+      b.y += correction * b.invMass * col.ny
+      b.z += correction * b.invMass * col.nz
+      if (b.node) { b.node.transform.setPosition(b.x, b.y, b.z) }
+    }
+  }
+}
+
+exports.RigidBody     = RigidBody
+exports.BoxCollider   = BoxCollider
+exports.SphereCollider= SphereCollider
+exports.PhysicsWorld  = PhysicsWorld

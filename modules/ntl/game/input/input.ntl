@@ -1,0 +1,127 @@
+val readline = require('readline')
+
+class InputSystem {
+  constructor() {
+    this._keys      = {}
+    this._prevKeys  = {}
+    this._mouse     = { x: 0, y: 0, dx: 0, dy: 0, buttons: {}, wheel: 0 }
+    this._prevMouse = { buttons: {} }
+    this._axes      = { horizontal: 0, vertical: 0 }
+    this._touches   = []
+    this._rl        = null
+    this._rawMode   = false
+    this._buffer    = ''
+    this._callbacks = {}
+  }
+
+  setup() {
+    try {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true)
+        this._rawMode = true
+      }
+      process.stdin.resume()
+      process.stdin.setEncoding('utf8')
+      process.stdin.on('data', (key) => {
+        this._handleRawKey(key)
+      })
+    } catch (_) {}
+    return this
+  }
+
+  _handleRawKey(key) {
+    if (key === '\u0003') {
+      process.emit('SIGINT')
+      return
+    }
+    val code = key.charCodeAt(0)
+    var name = key
+    if (key === '\u001b[A')      { name = 'ArrowUp' }
+    else if (key === '\u001b[B') { name = 'ArrowDown' }
+    else if (key === '\u001b[C') { name = 'ArrowRight' }
+    else if (key === '\u001b[D') { name = 'ArrowLeft' }
+    else if (key === ' ')        { name = 'Space' }
+    else if (key === '\r' || key === '\n') { name = 'Enter' }
+    else if (key === '\u001b')   { name = 'Escape' }
+    else if (key === '\u007f')   { name = 'Backspace' }
+    else { name = key.toUpperCase() }
+
+    this._keys[name] = true
+    setTimeout(() => { this._keys[name] = false }, 100)
+
+    if (this._callbacks['keydown']) {
+      each cb in this._callbacks['keydown'] {
+        cb(name, key)
+      }
+    }
+  }
+
+  update() {
+    this._prevKeys  = Object.assign({}, this._keys)
+    this._prevMouse.buttons = Object.assign({}, this._mouse.buttons)
+    this._mouse.dx  = 0
+    this._mouse.dy  = 0
+    this._mouse.wheel = 0
+
+    var ax = 0, ay = 0
+    if (this._keys['A'] || this._keys['ArrowLeft'])  { ax -= 1 }
+    if (this._keys['D'] || this._keys['ArrowRight']) { ax += 1 }
+    if (this._keys['W'] || this._keys['ArrowUp'])    { ay += 1 }
+    if (this._keys['S'] || this._keys['ArrowDown'])  { ay -= 1 }
+    val len = Math.sqrt(ax*ax + ay*ay)
+    if (len > 0) { ax /= len; ay /= len }
+    this._axes.horizontal = ax
+    this._axes.vertical   = ay
+  }
+
+  isDown(key)     { return !!this._keys[key] }
+  isUp(key)       { return !this._keys[key] }
+  wasPressed(key) { return !!this._keys[key] && !this._prevKeys[key] }
+  wasReleased(key){ return !this._keys[key]  &&  !!this._prevKeys[key] }
+
+  getAxis(name) {
+    if (name === 'Horizontal') { return this._axes.horizontal }
+    if (name === 'Vertical')   { return this._axes.vertical }
+    return 0
+  }
+
+  get mouseX()  { return this._mouse.x }
+  get mouseY()  { return this._mouse.y }
+  get mouseDX() { return this._mouse.dx }
+  get mouseDY() { return this._mouse.dy }
+
+  on(event, handler) {
+    if (!this._callbacks[event]) { this._callbacks[event] = [] }
+    this._callbacks[event].push(handler)
+    return () => {
+      this._callbacks[event] = this._callbacks[event].filter(f => f !== handler)
+    }
+  }
+
+  setMousePosition(x, y) {
+    this._mouse.dx = x - this._mouse.x
+    this._mouse.dy = y - this._mouse.y
+    this._mouse.x  = x
+    this._mouse.y  = y
+  }
+
+  setMouseButton(btn, down) {
+    this._mouse.buttons[btn] = down
+    if (this._callbacks[down ? 'mousedown' : 'mouseup']) {
+      each cb in this._callbacks[down ? 'mousedown' : 'mouseup'] {
+        cb(btn, this._mouse.x, this._mouse.y)
+      }
+    }
+  }
+
+  destroy() {
+    try {
+      if (this._rawMode && process.stdin.isTTY) {
+        process.stdin.setRawMode(false)
+      }
+      process.stdin.pause()
+    } catch (_) {}
+  }
+}
+
+exports.InputSystem = InputSystem

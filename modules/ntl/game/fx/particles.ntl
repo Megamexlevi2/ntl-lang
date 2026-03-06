@@ -1,0 +1,299 @@
+class Particle {
+  constructor() {
+    this.x = 0; this.y = 0; this.z = 0
+    this.vx= 0; this.vy= 0; this.vz= 0
+    this.ax= 0; this.ay= 0; this.az= 0
+    this.life      = 1.0
+    this.maxLife   = 1.0
+    this.size      = 4
+    this.startSize = 4
+    this.endSize   = 0
+    this.r = 255; this.g = 255; this.b = 255; this.a = 255
+    this.sr= 255; this.sg= 255; this.sb= 255
+    this.er= 255; this.eg= 0;   this.eb= 0
+    this.active    = false
+    this.rotation  = 0
+    this.rotSpeed  = 0
+  }
+}
+
+class ParticlePool {
+  constructor(maxCount) {
+    this._pool = []
+    this._count = maxCount || 256
+    var i = 0
+    while (i < this._count) {
+      this._pool.push(new Particle())
+      i++
+    }
+    this._next = 0
+  }
+
+  get() {
+    var tries = 0
+    while (tries < this._count) {
+      val p = this._pool[this._next]
+      this._next = (this._next + 1) % this._count
+      if (!p.active) { p.active = true; return p }
+      tries++
+    }
+    val p = this._pool[this._next]
+    this._next = (this._next + 1) % this._count
+    p.active = true
+    return p
+  }
+
+  each(callback) {
+    var i = 0
+    while (i < this._count) {
+      if (this._pool[i].active) { callback(this._pool[i]) }
+      i++
+    }
+  }
+
+  aliveCount() {
+    var n = 0
+    var i = 0
+    while (i < this._count) {
+      if (this._pool[i].active) { n++ }
+      i++
+    }
+    return n
+  }
+}
+
+class ParticleEmitter {
+  constructor(opts) {
+    opts              = opts || {}
+    this.x            = opts.x || 0
+    this.y            = opts.y || 0
+    this.z            = opts.z || 0
+    this.emitRate     = opts.emitRate    || 20
+    this.maxParticles = opts.maxParticles|| 256
+    this.active       = opts.active      !== false
+    this.loop         = opts.loop        !== false
+    this.duration     = opts.duration    || -1
+    this._elapsed     = 0
+    this._accumulator = 0
+    this._pool        = new ParticlePool(this.maxParticles)
+    this.gravity      = opts.gravity      !== undefined ? opts.gravity : -5
+    this.drag         = opts.drag         !== undefined ? opts.drag    : 0.98
+    this.speedMin     = opts.speedMin     || 1
+    this.speedMax     = opts.speedMax     || 4
+    this.lifeMin      = opts.lifeMin      || 0.5
+    this.lifeMax      = opts.lifeMax      || 1.5
+    this.sizeStart    = opts.sizeStart    || 6
+    this.sizeEnd      = opts.sizeEnd      || 0
+    this.spreadX      = opts.spreadX      || 1
+    this.spreadY      = opts.spreadY      || 1
+    this.spreadZ      = opts.spreadZ      || 1
+    this.dirX         = opts.dirX         || 0
+    this.dirY         = opts.dirY         || 1
+    this.dirZ         = opts.dirZ         || 0
+    this.startR       = opts.startR       !== undefined ? opts.startR : 255
+    this.startG       = opts.startG       !== undefined ? opts.startG : 200
+    this.startB       = opts.startB       !== undefined ? opts.startB : 50
+    this.endR         = opts.endR         !== undefined ? opts.endR : 255
+    this.endG         = opts.endG         !== undefined ? opts.endG : 0
+    this.endB         = opts.endB         !== undefined ? opts.endB : 0
+    this.startAlpha   = opts.startAlpha   !== undefined ? opts.startAlpha : 255
+    this.endAlpha     = opts.endAlpha     !== undefined ? opts.endAlpha   : 0
+    this.mode         = opts.mode         || 'point'
+    this.node         = opts.node         || null
+    this._onEmit      = opts.onEmit       || null
+  }
+
+  _rand(lo, hi) { return lo + Math.random() * (hi - lo) }
+
+  _emit(count) {
+    var i = 0
+    while (i < count) {
+      val p = this._pool.get()
+      val speed = this._rand(this.speedMin, this.speedMax)
+      val px = this.node ? this.node.transform.position.x : this.x
+      val py = this.node ? this.node.transform.position.y : this.y
+      val pz = this.node ? this.node.transform.position.z : this.z
+      p.x = px + (Math.random()-0.5) * this.spreadX
+      p.y = py + (Math.random()-0.5) * this.spreadY
+      p.z = pz + (Math.random()-0.5) * this.spreadZ
+      val nx = this.dirX + (Math.random()-0.5) * 0.5
+      val ny = this.dirY + (Math.random()-0.5) * 0.5
+      val nz = this.dirZ + (Math.random()-0.5) * 0.5
+      val nl = Math.sqrt(nx*nx+ny*ny+nz*nz) || 1
+      p.vx = (nx/nl) * speed
+      p.vy = (ny/nl) * speed
+      p.vz = (nz/nl) * speed
+      p.ax = 0; p.ay = this.gravity; p.az = 0
+      p.maxLife = this._rand(this.lifeMin, this.lifeMax)
+      p.life     = p.maxLife
+      p.startSize= this.sizeStart
+      p.size     = this.sizeStart
+      p.endSize  = this.sizeEnd
+      p.sr = this.startR; p.sg = this.startG; p.sb = this.startB
+      p.er = this.endR;   p.eg = this.endG;   p.eb = this.endB
+      p.r  = this.startR; p.g  = this.startG; p.b  = this.startB
+      p.a  = this.startAlpha
+      p.rotation = Math.random() * Math.PI * 2
+      p.rotSpeed = (Math.random()-0.5) * 4
+      if (this._onEmit) { this._onEmit(p) }
+      i++
+    }
+  }
+
+  burst(count) {
+    this._emit(count || 30)
+    return this
+  }
+
+  update(dt) {
+    if (!this.active) {
+      this._pool.each((p) => { this._updateParticle(p, dt) })
+      return
+    }
+    if (this.duration > 0) {
+      this._elapsed += dt
+      if (this._elapsed >= this.duration) {
+        if (this.loop) { this._elapsed = 0 }
+        else { this.active = false }
+      }
+    }
+    this._accumulator += dt * this.emitRate
+    val toEmit = this._accumulator | 0
+    this._accumulator -= toEmit
+    if (toEmit > 0) { this._emit(toEmit) }
+    this._pool.each((p) => { this._updateParticle(p, dt) })
+  }
+
+  _updateParticle(p, dt) {
+    p.vx = (p.vx + p.ax * dt) * this.drag
+    p.vy = (p.vy + p.ay * dt) * this.drag
+    p.vz = (p.vz + p.az * dt) * this.drag
+    p.x += p.vx * dt
+    p.y += p.vy * dt
+    p.z += p.vz * dt
+    p.rotation += p.rotSpeed * dt
+    p.life -= dt
+    if (p.life <= 0) { p.active = false; return }
+    val t = 1 - (p.life / p.maxLife)
+    p.r    = (p.sr + (p.er - p.sr) * t) | 0
+    p.g    = (p.sg + (p.eg - p.sg) * t) | 0
+    p.b    = (p.sb + (p.eb - p.sb) * t) | 0
+    p.a    = (this.startAlpha + (this.endAlpha - this.startAlpha) * t) | 0
+    p.size = p.startSize + (p.endSize - p.startSize) * t
+  }
+
+  render(renderer, camera) {
+    if (!renderer || !camera) { return }
+    val w    = renderer.width
+    val h    = renderer.height
+    val hw   = w * 0.5
+    val hh   = h * 0.5
+    val vpm  = camera.getVPMatrix ? camera.getVPMatrix() : null
+    if (!vpm) { return }
+    val m    = vpm.m
+    val buf  = renderer.buffer
+    this._pool.each((p) => {
+      if (!p.active) { return }
+      val cx = m[0]*p.x + m[1]*p.y + m[2]*p.z + m[3]
+      val cy = m[4]*p.x + m[5]*p.y + m[6]*p.z + m[7]
+      val cw = m[12]*p.x + m[13]*p.y + m[14]*p.z + m[15]
+      if (cw < 0.01) { return }
+      val sx = ((cx / cw) + 1) * hw
+      val sy = (1 - (cy / cw)) * hh
+      val sz = (p.size * hw / cw) | 0
+      val r = p.r, g = p.g, b = p.b, a = p.a
+      val ia = a / 255
+      val x0 = Math.max(0, sx - sz) | 0
+      val x1 = Math.min(w - 1, sx + sz) | 0
+      val y0 = Math.max(0, sy - sz) | 0
+      val y1 = Math.min(h - 1, sy + sz) | 0
+      var py = y0
+      while (py <= y1) {
+        var px = x0
+        while (px <= x1) {
+          val dx = px - sx, dy = py - sy
+          if (sz <= 1 || dx*dx + dy*dy <= sz*sz) {
+            val off = (py * w + px) * 4
+            buf[off]   = (buf[off]   * (1-ia) + r * ia) | 0
+            buf[off+1] = (buf[off+1] * (1-ia) + g * ia) | 0
+            buf[off+2] = (buf[off+2] * (1-ia) + b * ia) | 0
+          }
+          px++
+        }
+        py++
+      }
+    })
+  }
+
+  setPosition(x, y, z) { this.x = x; this.y = y; this.z = z; return this }
+  setDirection(x, y, z) { this.dirX=x; this.dirY=y; this.dirZ=z; return this }
+  aliveCount() { return this._pool.aliveCount() }
+}
+
+class ParticleSystem {
+  constructor() { this._emitters = [] }
+  createEmitter(opts) {
+    val e = new ParticleEmitter(opts)
+    this._emitters.push(e)
+    return e
+  }
+  update(dt) { each em in this._emitters { em.update(dt) } }
+  render(renderer, camera) { each em in this._emitters { em.render(renderer, camera) } }
+  remove(em) { this._emitters = this._emitters.filter(e => e !== em) }
+}
+
+fn fireEmitter(x, y, z) {
+  return new ParticleEmitter({
+    x, y, z,
+    emitRate: 40, maxParticles: 300,
+    speedMin: 1.5, speedMax: 4,
+    lifeMin: 0.4, lifeMax: 1.0,
+    sizeStart: 8, sizeEnd: 0,
+    dirX: 0, dirY: 1, dirZ: 0,
+    spreadX: 0.3, spreadY: 0.1, spreadZ: 0.3,
+    startR: 255, startG: 200, startB: 50,
+    endR: 200, endG: 40, endB: 0,
+    gravity: 0.5, drag: 0.96
+  })
+}
+
+fn smokeEmitter(x, y, z) {
+  return new ParticleEmitter({
+    x, y, z,
+    emitRate: 15, maxParticles: 200,
+    speedMin: 0.5, speedMax: 1.5,
+    lifeMin: 1.0, lifeMax: 2.5,
+    sizeStart: 6, sizeEnd: 20,
+    dirX: 0, dirY: 1, dirZ: 0,
+    spreadX: 0.2, spreadY: 0, spreadZ: 0.2,
+    startR: 120, startG: 120, startB: 120,
+    endR: 60,  endG: 60,  endB: 60,
+    startAlpha: 160, endAlpha: 0,
+    gravity: -0.2, drag: 0.99
+  })
+}
+
+fn explosionBurst(x, y, z, strength) {
+  strength = strength || 1.0
+  val em = new ParticleEmitter({
+    x, y, z,
+    emitRate: 0, maxParticles: 200,
+    speedMin: 3*strength, speedMax: 10*strength,
+    lifeMin: 0.3, lifeMax: 0.8,
+    sizeStart: 5, sizeEnd: 1,
+    spreadX: 0.5, spreadY: 0.5, spreadZ: 0.5,
+    startR: 255, startG: 200, startB: 100,
+    endR: 100, endG: 30, endB: 0,
+    gravity: -2, drag: 0.97, loop: false
+  })
+  em.burst(80)
+  em.active = false
+  return em
+}
+
+exports.Particle        = Particle
+exports.ParticleEmitter = ParticleEmitter
+exports.ParticleSystem  = ParticleSystem
+exports.fireEmitter     = fireEmitter
+exports.smokeEmitter    = smokeEmitter
+exports.explosionBurst  = explosionBurst

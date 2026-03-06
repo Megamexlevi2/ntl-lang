@@ -1,0 +1,92 @@
+class Activity {
+  constructor() {
+    this._engine   = null
+    this._state    = 'created'
+    this._scene    = null
+    this._renderer = null
+    this._input    = null
+    this._audio    = null
+    this._physics  = null
+    this._display  = null
+    this._time     = { total: 0, delta: 0, frame: 0 }
+  }
+
+  get scene()    { return this._scene }
+  get renderer() { return this._renderer }
+  get input()    { return this._input }
+  get audio()    { return this._audio }
+  get physics()  { return this._physics }
+  get display()  { return this._display }
+  get time()     { return this._time }
+  get width()    { return this._renderer ? this._renderer.width  : 1280 }
+  get height()   { return this._renderer ? this._renderer.height : 720  }
+
+  _attachEngine(engine) {
+    this._engine   = engine
+    this._scene    = engine.scene
+    this._renderer = engine.renderer
+    this._input    = engine.input
+    this._audio    = engine.audio
+    this._physics  = engine.physics
+    this._display  = engine.display
+  }
+
+  _tick(dt) {
+    this._time.delta  = dt
+    this._time.total += dt
+    this._time.frame++
+    if (this._input)   { this._input.update() }
+    if (this._physics) { this._physics.step(dt) }
+    this.onUpdate(dt)
+    if (this._renderer) { this._renderer.clear() }
+    if (this._scene && this._renderer) {
+      this._scene.render(this._renderer)
+    }
+    this.onRender(dt)
+    if (this._display && this._renderer) {
+      this._display.present(this._renderer.buffer)
+    }
+  }
+
+  onCreate() {}
+  onStart()  {}
+  onResume() {}
+  onUpdate(dt) {}
+  onRender(dt) {}
+  onPause()  {}
+  onStop()   {}
+  onDestroy() {}
+
+  log(...args) { console.log('[NTL:Game]', ...args) }
+
+  quit() {
+    if (this._engine) { this._engine.stop() }
+  }
+
+  setClearColor(r, g, b) {
+    if (this._renderer) { this._renderer.setClearColor(r, g, b) }
+    return this
+  }
+
+  setSkybox(topColor, botColor) {
+    if (this._scene) { this._scene.setSkybox(
+      topColor.r||40, topColor.g||60, topColor.b||120,
+      botColor.r||20, botColor.g||20, botColor.b||30
+    ) }
+    return this
+  }
+
+  addLight(lightType, x, y, z, r, g, b, intensity, lrng) {
+    if (!this._scene) { return null }
+    if (lightType === 'directional') {
+      val l = { type:'directional', dx:x||0, dy:y||-1, dz:z||0, r:r||255, g:g||255, b:b||255, intensity:intensity||1 }
+      this._scene.addLight(l)
+      return l
+    }
+    val l = { type:'point', x:x||0, y:y||5, z:z||0, r:r||255, g:g||255, b:b||255, intensity:intensity||1, lightRange:lrng||20 }
+    this._scene.addLight(l)
+    return l
+  }
+}
+
+exports.Activity = Activity

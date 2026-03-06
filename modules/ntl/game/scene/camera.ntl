@@ -1,0 +1,290 @@
+class FPSController {
+  constructor(camera, opts) {
+    opts             = opts || {}
+    this.camera      = camera
+    this.moveSpeed   = opts.moveSpeed   || 5.0
+    this.lookSpeed   = opts.lookSpeed   || 0.002
+    this.sprintMult  = opts.sprintMult  || 2.5
+    this.jumpForce   = opts.jumpForce   || 5.0
+    this.gravity     = opts.gravity     || 12.0
+    this.yaw         = opts.yaw         || 0
+    this.pitch       = opts.pitch       || 0
+    this.minPitch    = opts.minPitch    || -1.4
+    this.maxPitch    = opts.maxPitch    || 1.4
+    this.posX        = camera.x || 0
+    this.posY        = opts.eyeHeight   || 1.7
+    this.posZ        = camera.z || 5
+    this.velY        = 0
+    this.grounded    = true
+    this.enabled     = true
+    this._mouseLock  = false
+  }
+
+  update(input, dt) {
+    if (!this.enabled) { return }
+
+    var mx = input.mouseDX || 0
+    var my = input.mouseDY || 0
+
+    if (input.isDown('MouseLock') || input._mouseLock) {
+      this.yaw   -= mx * this.lookSpeed
+      this.pitch -= my * this.lookSpeed
+      if (this.pitch < this.minPitch) { this.pitch = this.minPitch }
+      if (this.pitch > this.maxPitch) { this.pitch = this.maxPitch }
+    }
+
+    val lookKeys = input.getMouseDelta ? input.getMouseDelta() : { dx: 0, dy: 0 }
+
+    val cos   = Math.cos(this.yaw)
+    val sin   = Math.sin(this.yaw)
+    var fwdX  = -sin
+    var fwdZ  = -cos
+    var rtX   =  cos
+    var rtZ   = -sin
+    var moveX = 0
+    var moveZ = 0
+
+    val spd = (input.isDown('Shift') || input.isDown('SHIFT')) ? this.moveSpeed * this.sprintMult : this.moveSpeed
+
+    if (input.isDown('W') || input.isDown('ArrowUp'))    { moveX += fwdX; moveZ += fwdZ }
+    if (input.isDown('S') || input.isDown('ArrowDown'))  { moveX -= fwdX; moveZ -= fwdZ }
+    if (input.isDown('A') || input.isDown('ArrowLeft'))  { moveX -= rtX;  moveZ -= rtZ  }
+    if (input.isDown('D') || input.isDown('ArrowRight')) { moveX += rtX;  moveZ += rtZ  }
+
+    val ml = Math.sqrt(moveX*moveX + moveZ*moveZ)
+    if (ml > 0) { moveX = moveX/ml * spd * dt; moveZ = moveZ/ml * spd * dt }
+
+    this.posX += moveX
+    this.posZ += moveZ
+
+    if (input.wasPressed('Space') && this.grounded) {
+      this.velY   = this.jumpForce
+      this.grounded = false
+    }
+
+    if (!this.grounded) {
+      this.velY  -= this.gravity * dt
+      this.posY  += this.velY   * dt
+      if (this.posY <= 1.7) {
+        this.posY   = 1.7
+        this.velY   = 0
+        this.grounded = true
+      }
+    }
+
+    val targetX = this.posX + Math.cos(this.pitch) * (-Math.sin(this.yaw))
+    val targetY = this.posY + Math.sin(this.pitch)
+    val targetZ = this.posZ + Math.cos(this.pitch) * (-Math.cos(this.yaw))
+
+    this.camera.setPosition(this.posX, this.posY, this.posZ)
+    this.camera.lookAt(targetX, targetY, targetZ)
+  }
+
+  setPosition(x, y, z) {
+    this.posX = x; this.posY = y; this.posZ = z
+    return this
+  }
+
+  teleport(x, y, z) {
+    this.posX = x; this.posY = y || 1.7; this.posZ = z
+    return this
+  }
+}
+
+class OrbitController {
+  constructor(camera, opts) {
+    opts            = opts || {}
+    this.camera     = camera
+    this.targetX    = opts.targetX || 0
+    this.targetY    = opts.targetY || 0
+    this.targetZ    = opts.targetZ || 0
+    this.distance   = opts.distance   || 8
+    this.minDist    = opts.minDist    || 1
+    this.maxDist    = opts.maxDist    || 100
+    this.phi        = opts.phi        || 0.8
+    this.theta      = opts.theta      || 0
+    this.minPhi     = opts.minPhi     || 0.05
+    this.maxPhi     = opts.maxPhi     || 3.1
+    this.panSpeed   = opts.panSpeed   || 0.01
+    this.zoomSpeed  = opts.zoomSpeed  || 1.2
+    this.rotateSpeed= opts.rotateSpeed|| 0.005
+    this._dragging  = false
+    this._lastX     = 0
+    this._lastY     = 0
+    this.enabled    = true
+    this._update()
+  }
+
+  _update() {
+    val sp  = Math.sin(this.phi)
+    val cp  = Math.cos(this.phi)
+    val st  = Math.sin(this.theta)
+    val ct  = Math.cos(this.theta)
+    this.camera.setPosition(
+      this.targetX + this.distance * sp * st,
+      this.targetY + this.distance * cp,
+      this.targetZ + this.distance * sp * ct
+    )
+    this.camera.lookAt(this.targetX, this.targetY, this.targetZ)
+  }
+
+  update(input, dt) {
+    if (!this.enabled) { return }
+    if (input.isDown('Q')) { this.theta -= 1.5 * dt }
+    if (input.isDown('E')) { this.theta += 1.5 * dt }
+    if (input.isDown('R')) { this.phi = Math.max(this.minPhi, this.phi - 1.0 * dt) }
+    if (input.isDown('F')) { this.phi = Math.min(this.maxPhi, this.phi + 1.0 * dt) }
+    if (input.isDown('Z') || input.isDown('ArrowUp'))   { this.distance = Math.max(this.minDist, this.distance - this.zoomSpeed * dt * 20) }
+    if (input.isDown('X') || input.isDown('ArrowDown')) { this.distance = Math.min(this.maxDist, this.distance + this.zoomSpeed * dt * 20) }
+    if (input.isDown('A') || input.isDown('ArrowLeft'))  { this.theta -= this.rotateSpeed * 200 * dt }
+    if (input.isDown('D') || input.isDown('ArrowRight')) { this.theta += this.rotateSpeed * 200 * dt }
+    val mx = input.mouseDX || 0
+    val my = input.mouseDY || 0
+    if (input.isDown('Mouse1') || input.mouseButton(0)) {
+      this.theta += mx * this.panSpeed * 0.5
+      this.phi    = Math.max(this.minPhi, Math.min(this.maxPhi, this.phi + my * this.panSpeed * 0.5))
+    }
+    this._update()
+  }
+
+  setTarget(x, y, z) {
+    this.targetX = x; this.targetY = y; this.targetZ = z
+    this._update()
+    return this
+  }
+
+  zoom(delta) {
+    this.distance = Math.max(this.minDist, Math.min(this.maxDist, this.distance + delta))
+    this._update()
+    return this
+  }
+}
+
+class FollowController {
+  constructor(camera, opts) {
+    opts             = opts || {}
+    this.camera      = camera
+    this.target      = opts.target     || null
+    this.offset      = opts.offset     || { x: 0, y: 3, z: 6 }
+    this.lookOffset  = opts.lookOffset || { x: 0, y: 0, z: 0 }
+    this.smoothSpeed = opts.smoothSpeed|| 5.0
+    this.rotSmooth   = opts.rotSmooth  || 8.0
+    this._cx = 0; this._cy = 0; this._cz = 0
+    this.enabled     = true
+  }
+
+  update(input, dt) {
+    if (!this.enabled || !this.target) { return }
+    val t  = this.target
+    val tx = t.transform ? t.transform.position.x : (t.x || 0)
+    val ty = t.transform ? t.transform.position.y : (t.y || 0)
+    val tz = t.transform ? t.transform.position.z : (t.z || 0)
+    val trot = t.transform ? (t.transform.rotation.y || 0) : 0
+    val ox = Math.sin(trot) * this.offset.z + this.offset.x
+    val oz = Math.cos(trot) * this.offset.z
+    val gx = tx + ox
+    val gy = ty + this.offset.y
+    val gz = tz + oz
+    val lmb = Math.min(1, this.smoothSpeed * dt)
+    this._cx += (gx - this._cx) * lmb
+    this._cy += (gy - this._cy) * lmb
+    this._cz += (gz - this._cz) * lmb
+    this.camera.setPosition(this._cx, this._cy, this._cz)
+    this.camera.lookAt(
+      tx + this.lookOffset.x,
+      ty + this.lookOffset.y,
+      tz + this.lookOffset.z
+    )
+  }
+
+  setTarget(node) {
+    this.target = node
+    return this
+  }
+}
+
+class FlyController {
+  constructor(camera, opts) {
+    opts            = opts || {}
+    this.camera     = camera
+    this.speed      = opts.speed    || 8.0
+    this.fastSpeed  = opts.fastSpeed|| 30.0
+    this.lookSpeed  = opts.lookSpeed|| 0.003
+    this.posX       = camera.x || 0
+    this.posY       = camera.y || 5
+    this.posZ       = camera.z || 8
+    this.yaw        = 0
+    this.pitch      = 0
+    this.enabled    = true
+  }
+
+  update(input, dt) {
+    if (!this.enabled) { return }
+    val mx = input.mouseDX || 0
+    val my = input.mouseDY || 0
+    this.yaw   -= mx * this.lookSpeed
+    this.pitch -= my * this.lookSpeed
+    if (this.pitch < -1.55) { this.pitch = -1.55 }
+    if (this.pitch >  1.55) { this.pitch =  1.55 }
+    val spd = (input.isDown('Shift') || input.isDown('SHIFT')) ? this.fastSpeed : this.speed
+    val cy  = Math.cos(this.yaw), sy = Math.sin(this.yaw)
+    val cp  = Math.cos(this.pitch), sp = Math.sin(this.pitch)
+    val fwdX = -sy * cp; val fwdY = sp; val fwdZ = -cy * cp
+    val rtX  =  cy;       val rtZ  = -sy
+    if (input.isDown('W') || input.isDown('ArrowUp'))    { this.posX += fwdX*spd*dt; this.posY += fwdY*spd*dt; this.posZ += fwdZ*spd*dt }
+    if (input.isDown('S') || input.isDown('ArrowDown'))  { this.posX -= fwdX*spd*dt; this.posY -= fwdY*spd*dt; this.posZ -= fwdZ*spd*dt }
+    if (input.isDown('A') || input.isDown('ArrowLeft'))  { this.posX -= rtX*spd*dt;  this.posZ -= rtZ*spd*dt }
+    if (input.isDown('D') || input.isDown('ArrowRight')) { this.posX += rtX*spd*dt;  this.posZ += rtZ*spd*dt }
+    if (input.isDown('Space'))  { this.posY += spd * dt }
+    if (input.isDown('C'))      { this.posY -= spd * dt }
+    this.camera.setPosition(this.posX, this.posY, this.posZ)
+    this.camera.lookAt(
+      this.posX + fwdX,
+      this.posY + fwdY,
+      this.posZ + fwdZ
+    )
+  }
+
+  setPosition(x, y, z) {
+    this.posX = x; this.posY = y; this.posZ = z
+    return this
+  }
+}
+
+class CameraShake {
+  constructor(camera) {
+    this.camera    = camera
+    this._intensity= 0
+    this._duration = 0
+    this._elapsed  = 0
+    this._freq     = 30
+  }
+
+  shake(intensity, duration) {
+    this._intensity = intensity || 0.3
+    this._duration  = duration  || 0.5
+    this._elapsed   = 0
+  }
+
+  update(dt) {
+    if (this._elapsed >= this._duration) { return }
+    this._elapsed += dt
+    val t     = 1 - (this._elapsed / this._duration)
+    val amp   = this._intensity * t
+    val ox    = (Math.random() * 2 - 1) * amp
+    val oy    = (Math.random() * 2 - 1) * amp
+    this.camera.setPosition(
+      this.camera.x + ox,
+      this.camera.y + oy,
+      this.camera.z
+    )
+  }
+
+  isActive() { return this._elapsed < this._duration }
+}
+
+exports.FPSController    = FPSController
+exports.OrbitController  = OrbitController
+exports.FollowController = FollowController
+exports.FlyController    = FlyController
+exports.CameraShake      = CameraShake

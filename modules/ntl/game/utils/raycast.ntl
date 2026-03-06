@@ -1,0 +1,213 @@
+class Ray {
+  constructor(ox, oy, oz, dx, dy, dz) {
+    this.ox = ox || 0; this.oy = oy || 0; this.oz = oz || 0
+    val len = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1
+    this.dx = dx/len; this.dy = dy/len; this.dz = dz/len
+  }
+
+  pointAt(t) {
+    return {
+      x: this.ox + this.dx * t,
+      y: this.oy + this.dy * t,
+      z: this.oz + this.dz * t
+    }
+  }
+
+  intersectSphere(cx, cy, cz, radius) {
+    val ocx = this.ox - cx, ocy = this.oy - cy, ocz = this.oz - cz
+    val b   = ocx*this.dx + ocy*this.dy + ocz*this.dz
+    val c   = ocx*ocx + ocy*ocy + ocz*ocz - radius*radius
+    val disc= b*b - c
+    if (disc < 0) { return null }
+    val sqrtD = Math.sqrt(disc)
+    val t1    = -b - sqrtD
+    val t2    = -b + sqrtD
+    if (t2 < 0) { return null }
+    val t = t1 >= 0 ? t1 : t2
+    return { t, point: this.pointAt(t), normal: this._sphereNormal(this.pointAt(t), cx, cy, cz) }
+  }
+
+  _sphereNormal(pt, cx, cy, cz) {
+    val nx = pt.x-cx, ny = pt.y-cy, nz = pt.z-cz
+    val l  = Math.sqrt(nx*nx+ny*ny+nz*nz) || 1
+    return { x: nx/l, y: ny/l, z: nz/l }
+  }
+
+  intersectAABB(minX, minY, minZ, maxX, maxY, maxZ) {
+    val idx = this.dx !== 0 ? 1/this.dx : 1e30
+    val idy = this.dy !== 0 ? 1/this.dy : 1e30
+    val idz = this.dz !== 0 ? 1/this.dz : 1e30
+    val tx1 = (minX - this.ox) * idx, tx2 = (maxX - this.ox) * idx
+    val ty1 = (minY - this.oy) * idy, ty2 = (maxY - this.oy) * idy
+    val tz1 = (minZ - this.oz) * idz, tz2 = (maxZ - this.oz) * idz
+    val tmin = Math.max(Math.min(tx1,tx2), Math.min(ty1,ty2), Math.min(tz1,tz2))
+    val tmax = Math.min(Math.max(tx1,tx2), Math.max(ty1,ty2), Math.max(tz1,tz2))
+    if (tmax < 0 || tmin > tmax) { return null }
+    val t = tmin >= 0 ? tmin : tmax
+    return { t, point: this.pointAt(t) }
+  }
+
+  intersectPlane(nx, ny, nz, d) {
+    val denom = nx*this.dx + ny*this.dy + nz*this.dz
+    if (Math.abs(denom) < 1e-6) { return null }
+    val t = -(nx*this.ox + ny*this.oy + nz*this.oz + d) / denom
+    if (t < 0) { return null }
+    return { t, point: this.pointAt(t), normal: { x: nx, y: ny, z: nz } }
+  }
+
+  intersectTriangle(ax, ay, az, bx, by, bz, cx, cy, cz) {
+    val edge1x = bx-ax, edge1y = by-ay, edge1z = bz-az
+    val edge2x = cx-ax, edge2y = cy-ay, edge2z = cz-az
+    val hx = this.dy*edge2z - this.dz*edge2y
+    val hy = this.dz*edge2x - this.dx*edge2z
+    val hz = this.dx*edge2y - this.dy*edge2x
+    val det = edge1x*hx + edge1y*hy + edge1z*hz
+    if (Math.abs(det) < 1e-8) { return null }
+    val invDet = 1/det
+    val sx = this.ox-ax, sy = this.oy-ay, sz = this.oz-az
+    val u  = (sx*hx + sy*hy + sz*hz) * invDet
+    if (u < 0 || u > 1) { return null }
+    val qx = sy*edge1z - sz*edge1y
+    val qy = sz*edge1x - sx*edge1z
+    val qz = sx*edge1y - sy*edge1x
+    val v  = (this.dx*qx + this.dy*qy + this.dz*qz) * invDet
+    if (v < 0 || u+v > 1) { return null }
+    val t = (edge2x*qx + edge2y*qy + edge2z*qz) * invDet
+    if (t < 0) { return null }
+    return { t, u, v, point: this.pointAt(t) }
+  }
+
+  static fromCamera(camera, ndcX, ndcY) {
+    val vp  = camera.getVPMatrix()
+    val inv = []
+    val m   = vp.m
+    val a00=m[0],a01=m[1],a02=m[2],a03=m[3]
+    val a10=m[4],a11=m[5],a12=m[6],a13=m[7]
+    val a20=m[8],a21=m[9],a22=m[10],a23=m[11]
+    val a30=m[12],a31=m[13],a32=m[14],a33=m[15]
+    val b00=a00*a11-a01*a10, b01=a00*a12-a02*a10, b02=a00*a13-a03*a10
+    val b03=a01*a12-a02*a11, b04=a01*a13-a03*a11, b05=a02*a13-a03*a12
+    val b06=a20*a31-a21*a30, b07=a20*a32-a22*a30, b08=a20*a33-a23*a30
+    val b09=a21*a32-a22*a31, b10=a21*a33-a23*a31, b11=a22*a33-a23*a32
+    val det=b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06
+    if (Math.abs(det) < 1e-12) { return new Ray(camera.x, camera.y, camera.z, 0, 0, -1) }
+    val id = 1/det
+    inv[0] =( a11*b11-a12*b10+a13*b09)*id; inv[1]=(-a01*b11+a02*b10-a03*b09)*id
+    inv[2] =( a31*b05-a32*b04+a33*b03)*id; inv[3]=(-a21*b05+a22*b04-a23*b03)*id
+    inv[4] =(-a10*b11+a12*b08-a13*b07)*id; inv[5]=( a00*b11-a02*b08+a03*b07)*id
+    inv[6] =(-a30*b05+a32*b02-a33*b01)*id; inv[7]=( a20*b05-a22*b02+a23*b01)*id
+    inv[8] =( a10*b10-a11*b08+a13*b06)*id; inv[9]=(-a00*b10+a01*b08-a03*b06)*id
+    inv[10]=( a30*b04-a31*b02+a33*b00)*id; inv[11]=(-a20*b04+a21*b02-a23*b00)*id
+    inv[12]=(-a10*b09+a11*b07-a12*b06)*id; inv[13]=( a00*b09-a01*b07+a02*b06)*id
+    inv[14]=(-a30*b03+a31*b01-a32*b00)*id; inv[15]=( a20*b03-a21*b01+a22*b00)*id
+    fn unproj(nx, ny, nz) {
+      val x=inv[0]*nx+inv[1]*ny+inv[2]*nz+inv[3]
+      val y=inv[4]*nx+inv[5]*ny+inv[6]*nz+inv[7]
+      val z=inv[8]*nx+inv[9]*ny+inv[10]*nz+inv[11]
+      val w=inv[12]*nx+inv[13]*ny+inv[14]*nz+inv[15]
+      if (Math.abs(w)<1e-8) { return {x,y,z} }
+      return {x:x/w, y:y/w, z:z/w}
+    }
+    val near = unproj(ndcX, ndcY, -1)
+    val far  = unproj(ndcX, ndcY,  1)
+    val dx = far.x-near.x, dy = far.y-near.y, dz = far.z-near.z
+    return new Ray(near.x, near.y, near.z, dx, dy, dz)
+  }
+
+  static screenToRay(camera, screenX, screenY, screenW, screenH) {
+    val ndcX = (screenX / screenW) * 2 - 1
+    val ndcY = 1 - (screenY / screenH) * 2
+    return Ray.fromCamera(camera, ndcX, ndcY)
+  }
+}
+
+class AABB {
+  constructor(minX, minY, minZ, maxX, maxY, maxZ) {
+    this.minX = minX; this.minY = minY; this.minZ = minZ
+    this.maxX = maxX; this.maxY = maxY; this.maxZ = maxZ
+  }
+  intersects(other) {
+    return this.minX <= other.maxX && this.maxX >= other.minX &&
+           this.minY <= other.maxY && this.maxY >= other.minY &&
+           this.minZ <= other.maxZ && this.maxZ >= other.minZ
+  }
+  containsPoint(x, y, z) {
+    return x>=this.minX&&x<=this.maxX&&y>=this.minY&&y<=this.maxY&&z>=this.minZ&&z<=this.maxZ
+  }
+  expand(dx, dy, dz) {
+    return new AABB(this.minX-dx,this.minY-dy,this.minZ-dz,this.maxX+dx,this.maxY+dy,this.maxZ+dz)
+  }
+  center() {
+    return {
+      x: (this.minX+this.maxX)*0.5,
+      y: (this.minY+this.maxY)*0.5,
+      z: (this.minZ+this.maxZ)*0.5
+    }
+  }
+  size() {
+    return {
+      x: this.maxX-this.minX,
+      y: this.maxY-this.minY,
+      z: this.maxZ-this.minZ
+    }
+  }
+  static fromNode(node) {
+    val p = node.transform ? node.transform.position : {x:0,y:0,z:0}
+    val s = node.transform ? node.transform.scale : {x:1,y:1,z:1}
+    return new AABB(
+      p.x - s.x * 0.5, p.y - s.y * 0.5, p.z - s.z * 0.5,
+      p.x + s.x * 0.5, p.y + s.y * 0.5, p.z + s.z * 0.5
+    )
+  }
+}
+
+class Raycaster {
+  constructor() {
+    this._ray = null
+  }
+
+  setRay(ray)   { this._ray = ray; return this }
+  getRay()      { return this._ray }
+
+  setFromCamera(camera, ndcX, ndcY) {
+    this._ray = Ray.fromCamera(camera, ndcX, ndcY)
+    return this
+  }
+
+  setFromScreen(camera, sx, sy, sw, sh) {
+    this._ray = Ray.screenToRay(camera, sx, sy, sw, sh)
+    return this
+  }
+
+  intersectSphere(cx, cy, cz, r) {
+    return this._ray ? this._ray.intersectSphere(cx, cy, cz, r) : null
+  }
+
+  intersectAABB(aabb) {
+    return this._ray ? this._ray.intersectAABB(aabb.minX,aabb.minY,aabb.minZ,aabb.maxX,aabb.maxY,aabb.maxZ) : null
+  }
+
+  intersectPlane(nx, ny, nz, d) {
+    return this._ray ? this._ray.intersectPlane(nx, ny, nz, d) : null
+  }
+
+  intersectGround(y) {
+    return this._ray ? this._ray.intersectPlane(0, 1, 0, -y) : null
+  }
+
+  intersectNodes(nodes) {
+    if (!this._ray) { return [] }
+    val hits = []
+    each node in nodes {
+      val aabb = AABB.fromNode(node)
+      val hit  = this.intersectAABB(aabb)
+      if (hit) { hits.push({ node, hit }) }
+    }
+    hits.sort((a, b) => a.hit.t - b.hit.t)
+    return hits
+  }
+}
+
+exports.Ray       = Ray
+exports.AABB      = AABB
+exports.Raycaster = Raycaster

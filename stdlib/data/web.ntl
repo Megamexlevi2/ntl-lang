@@ -1,0 +1,270 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+
+fn escapeHtml(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")
+}
+
+fn escapeAttr(str) { return escapeHtml(str) }
+
+fn raw(value) { return { __raw: true, value: String(value) } }
+
+fn isRaw(v) { return v && v.__raw === true }
+
+fn renderValue(v) {
+  if (v === null || v === undefined) { return "" }
+  if (isRaw(v))        { return v.value }
+  if (Array.isArray(v)) { return v.map(renderValue).join("") }
+  return escapeHtml(String(v))
+}
+
+fn attrs(obj) {
+  if (!obj) { return "" }
+  return Object.entries(obj)
+    .filter((pair) => pair[1] !== false && pair[1] !== null && pair[1] !== undefined)
+    .map((pair) => pair[1] === true ? ` ${pair[0]}` : ` ${pair[0]}="${escapeAttr(String(pair[1]))}"`)
+    .join("")
+}
+
+val SELF_CLOSING = new Set(["area","base","br","col","embed","hr","img","input","link","meta","param","source","track","wbr"])
+
+fn tag(name, attrObj, ...children) {
+  val a = attrObj ? attrs(attrObj) : ""
+  if (SELF_CLOSING.has(name.toLowerCase())) { return raw(`<${name}${a}>`) }
+  val inner = children.map(c => (typeof c === "function" && c._isNTLComponent) ? renderValue(c()) : renderValue(c)).join("")
+  return raw(`<${name}${a}>${inner}</${name}>`)
+}
+
+val el = new Proxy({}, {
+  get(_, name) {
+    return (first, ...rest) => {
+      if (first && typeof first === "object" && !Array.isArray(first) && !isRaw(first)) {
+        return tag(name, first, ...rest)
+      }
+      return tag(name, null, ...(first !== undefined ? [first] : []), ...rest)
+    }
+  }
+})
+
+var _currentComponent = null
+var _hookIndex        = 0
+
+fn useState(initial) {
+  val _isNode = typeof process !== "undefined" && process.versions != null
+  if (_isNode) {
+    return [typeof initial === "function" ? initial() : initial, () => {}]
+  }
+  val comp = _currentComponent
+  if (!comp) { throw new Error("useState must be called inside a component") }
+  val idx  = _hookIndex++
+  if (comp._state[idx] === undefined) {
+    comp._state[idx] = typeof initial === "function" ? initial() : initial
+  }
+  val setVal = (v) => {
+    comp._state[idx] = typeof v === "function" ? v(comp._state[idx]) : v
+    comp._rerender()
+  }
+  return [comp._state[idx], setVal]
+}
+
+fn useEffect(cb, deps) {
+  val _isNode2 = typeof process !== "undefined" && process.versions != null
+  if (_isNode2) { return }
+  val comp = _currentComponent
+  if (!comp) { return }
+  val idx  = _hookIndex++
+  val prev = comp._effects[idx]
+  val changed = !prev || (deps || []).some((d, i) => d !== prev[i])
+  if (changed) {
+    if (comp._cleanups[idx]) { comp._cleanups[idx]() }
+    comp._effects[idx] = deps
+    val cleanup = cb()
+    comp._cleanups[idx] = typeof cleanup === "function" ? cleanup : null
+  }
+}
+
+fn useRef(initial) {
+  val comp = _currentComponent
+  if (!comp) { return { current: initial } }
+  val idx = _hookIndex++
+  if (!comp._refs[idx]) { comp._refs[idx] = { current: initial } }
+  return comp._refs[idx]
+}
+
+fn useMemo(cb, deps) {
+  val comp = _currentComponent
+  if (!comp) { return cb() }
+  val idx  = _hookIndex++
+  val prev = comp._memos[idx]
+  val changed = !prev || (deps || []).some((d, i) => d !== prev.deps[i])
+  if (changed) { comp._memos[idx] = { value: cb(), deps: deps || [] } }
+  return comp._memos[idx].value
+}
+
+fn useCallback(cb, deps) { return useMemo(() => cb, deps) }
+
+fn mkComponent(cb) {
+  cb._isNTLComponent = true
+  return cb
+}
+
+fn renderToString(cb, props) {
+  _currentComponent = { _state:[], _effects:[], _cleanups:[], _refs:[], _memos:[], _rerender:()=>{} }
+  _hookIndex = 0
+  val result = cb(props || {})
+  _currentComponent = null
+  return isRaw(result) ? result.value : renderValue(result)
+}
+
+fn mount(cb, container, props) {
+  val _isBrowser = typeof process === "undefined" || process.versions == null
+  if (_isBrowser) {
+    val _dom = global.document || null
+    if (typeof container === "string" && _dom) { container = _dom.querySelector(container) }
+    if (!container) { throw new Error("mount: container not found") }
+    val inst = {
+      _fn: cb, _props: props || {}, _container: container,
+      _state:[], _effects:[], _cleanups:[], _refs:[], _memos:[],
+      _rerender() {
+        _currentComponent = inst; _hookIndex = 0
+        val res = inst._fn(inst._props)
+        _currentComponent = null
+        val _domInst = global.document || null
+    if (_domInst) { inst._container.innerHTML = isRaw(res) ? res.value : renderValue(res) }
+      }
+    }
+    inst._rerender()
+    return inst
+  }
+  return renderToString(cb, props)
+}
+
+fn page(options) {
+  options = options || {}
+  val title       = options.title       || "NTL App"
+  val description = options.description || ""
+  val lang        = options.lang        || "en"
+  val charset     = options.charset     || "UTF-8"
+  val viewport    = options.viewport    || "width=device-width, initial-scale=1.0"
+  val styles      = options.styles      || []
+  val scripts     = options.scripts     || []
+  val bodyContent = options.body        || ""
+  val extraHead   = options.head        || ""
+  val favicon     = options.favicon     || ""
+
+  val styleLinks = styles.map(s => {
+    if (typeof s === "string" && !s.startsWith("<")) { return `  <link rel="stylesheet" href="${escapeAttr(s)}">` }
+    if (typeof s === "string") { return s }
+    return `  <style>\n${s.css || ""}\n  </style>`
+  }).join("\n")
+
+  val scriptTags = scripts.map(s => {
+    if (typeof s === "string" && !s.startsWith("<")) { return `  <script src="${escapeAttr(s)}"></script>` }
+    if (typeof s === "string") { return s }
+    return `  <script>\n${s.code || ""}\n  </script>`
+  }).join("\n")
+
+  return `<!DOCTYPE html>
+<html lang="${escapeAttr(lang)}">
+<head>
+  <meta charset="${escapeAttr(charset)}">
+  <meta name="viewport" content="${escapeAttr(viewport)}">
+  <title>${escapeHtml(title)}</title>
+${description ? `  <meta name="description" content="${escapeAttr(description)}">` : ""}
+${favicon ? `  <link rel="icon" href="${escapeAttr(favicon)}">` : ""}
+${styleLinks}
+${extraHead}
+</head>
+<body>
+${isRaw(bodyContent) ? bodyContent.value : escapeHtml(String(bodyContent))}
+${scriptTags}
+</body>
+</html>`
+}
+
+fn qs(obj) {
+  return Object.entries(obj || {})
+    .filter((pair) => pair[1] != null)
+    .map((pair) => `${encodeURIComponent(pair[0])}=${encodeURIComponent(pair[1])}`)
+    .join("&")
+}
+
+fn parseQs(str) {
+  val r = {}
+  val s = str.startsWith("?") ? str.slice(1) : str
+  s.split("&").forEach(p => {
+    val eq = p.indexOf("=")
+    if (eq < 0) { return }
+    try { r[decodeURIComponent(p.slice(0, eq))] = decodeURIComponent(p.slice(eq + 1)) } catch (_) {}
+  })
+  return r
+}
+
+fn slugify(str) {
+  return str.toLowerCase().trim().normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
+fn truncate(str, len, suffix) {
+  suffix = suffix === undefined ? "..." : suffix
+  return str.length <= len ? str : str.slice(0, len - suffix.length) + suffix
+}
+
+fn wordCount(str) { return str.trim().split(/\s+/).filter(Boolean).length }
+
+fn readTime(str, wpm) { return Math.ceil(wordCount(str) / (wpm || 200)) }
+
+fn excerpt(str, len) {
+  return truncate(str.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim(), len || 160)
+}
+
+fn markdown(str) {
+  val h = (level, x) => "<h" + level + ">" + x + "</h" + level + ">"
+  val wrap = (tagName, x) => "<" + tagName + ">" + x + "</" + tagName + ">"
+  var r = str
+  r = r.replace(/^######\s(.+)/gm, (_, x) => h(6, x))
+  r = r.replace(/^#####\s(.+)/gm,  (_, x) => h(5, x))
+  r = r.replace(/^####\s(.+)/gm,   (_, x) => h(4, x))
+  r = r.replace(/^###\s(.+)/gm,    (_, x) => h(3, x))
+  r = r.replace(/^##\s(.+)/gm,     (_, x) => h(2, x))
+  r = r.replace(/^#\s(.+)/gm,      (_, x) => h(1, x))
+  r = r.replace(/\*\*(.+?)\*\*/g,  (_, x) => wrap("strong", x))
+  r = r.replace(/\*(.+?)\*/g,      (_, x) => wrap("em", x))
+  r = r.replace(/`(.+?)`/g,         (_, x) => wrap("code", x))
+  r = r.replace(/\[(.+?)\]\((.+?)\)/g, (_, t, u) => "<a href=\"" + u + "\">" + t + "</a>")
+  r = r.replace(/^---$/gm,          () => "<hr>")
+  r = r.replace(/^> (.+)/gm,        (_, x) => wrap("blockquote", x))
+  r = r.replace(/^- (.+)/gm,        (_, x) => wrap("li", x))
+  r = r.replace(/\n\n/g,            () => "</p><p>")
+  return r
+}
+
+exports.el            = el
+exports.html          = (strings, ...vals) => { var r = ""; strings.forEach((s, i) => { r += s; if (i < vals.length) { r += renderValue(vals[i]) } }); return raw(r) }
+exports.css           = (strings, ...vals) => { var r = ""; strings.forEach((s, i) => { r += s; if (i < vals.length) { r += vals[i] } }); return { css: r } }
+exports.page          = page
+exports.raw           = raw
+exports.escapeHtml    = escapeHtml
+exports.escapeAttr    = escapeAttr
+exports.attrs         = attrs
+exports.tag           = tag
+exports.qs            = qs
+exports.parseQs       = parseQs
+exports.slugify       = slugify
+exports.truncate      = truncate
+exports.wordCount     = wordCount
+exports.readTime      = readTime
+exports.excerpt       = excerpt
+exports.markdown      = markdown
+exports.useState      = useState
+exports.useEffect     = useEffect
+exports.useRef        = useRef
+exports.useMemo       = useMemo
+exports.useCallback   = useCallback
+exports.component     = mkComponent
+exports.mount         = mount
+exports.renderToString = renderToString
+exports.renderValue   = renderValue
+exports.isRaw         = isRaw

@@ -1,0 +1,192 @@
+val Easing = {
+  linear:     (t) => t,
+  easeIn:     (t) => t * t,
+  easeOut:    (t) => t * (2 - t),
+  easeInOut:  (t) => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+  easeInCubic: (t) => t * t * t,
+  easeOutCubic:(t) => { val u=1-t; return 1 - u*u*u },
+  easeInOutCubic: (t) => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2,
+  easeInQuart: (t) => t * t * t * t,
+  easeOutQuart:(t) => { val u=1-t; return 1 - u*u*u*u },
+  easeInQuint: (t) => t * t * t * t * t,
+  easeOutQuint:(t) => { val u=1-t; return 1 - u*u*u*u*u },
+  easeInSine:  (t) => 1 - Math.cos(t * Math.PI / 2),
+  easeOutSine: (t) => Math.sin(t * Math.PI / 2),
+  easeInOutSine:(t)=> -(Math.cos(Math.PI * t) - 1) / 2,
+  easeInExpo:  (t) => t === 0 ? 0 : Math.pow(2, 10 * t - 10),
+  easeOutExpo: (t) => t === 1 ? 1 : 1 - Math.pow(2, -10 * t),
+  easeInCirc:  (t) => 1 - Math.sqrt(1 - t*t),
+  easeOutCirc: (t) => Math.sqrt(1 - Math.pow(t-1, 2)),
+  bounce: (t) => {
+    val n1 = 7.5625, d1 = 2.75
+    if (t < 1/d1)     { return n1 * t * t }
+    if (t < 2/d1)     { val tt = t - 1.5/d1;   return n1*tt*tt + 0.75 }
+    if (t < 2.5/d1)   { val tt = t - 2.25/d1;  return n1*tt*tt + 0.9375 }
+    val tt = t - 2.625/d1; return n1*tt*tt + 0.984375
+  },
+  elastic: (t) => {
+    if (t === 0 || t === 1) { return t }
+    return -Math.pow(2, 10*t-10) * Math.sin((t*10-10.75) * (2*Math.PI) / 3)
+  },
+  elasticOut: (t) => {
+    if (t === 0 || t === 1) { return t }
+    return Math.pow(2, -10*t) * Math.sin((t*10-0.75) * (2*Math.PI) / 3) + 1
+  },
+  back: (t) => { val c1=1.70158; val c3=c1+1; return c3*t*t*t - c1*t*t },
+  backOut: (t) => { val c1=1.70158; val c3=c1+1; val u=t-1; return 1 + c3*u*u*u + c1*u*u },
+  steps: (steps) => { return (t) => Math.floor(t * steps) / steps }
+}
+
+class Tween {
+  constructor(target) {
+    this._target   = target
+    this._props    = []
+    this._duration = 1.0
+    this._elapsed  = 0
+    this._easing   = Easing.easeInOut
+    this._onUpdate = null
+    this._onDone   = null
+    this._onStart  = null
+    this._loop     = false
+    this._pingpong = false
+    this._delay    = 0
+    this._started  = false
+    this._done     = false
+    this._paused   = false
+    this._chain    = null
+  }
+
+  to(props, duration, easing) {
+    this._duration = duration || 1.0
+    this._easing   = easing   || Easing.easeInOut
+    each k in Object.keys(props) {
+      this._props.push({
+        key:   k,
+        start: this._target[k],
+        end:   props[k],
+        isNum: typeof props[k] === 'number'
+      })
+    }
+    return this
+  }
+
+  from(props) {
+    each k in Object.keys(props) {
+      this._target[k] = props[k]
+    }
+    each p in this._props {
+      p.start = this._target[p.key]
+    }
+    return this
+  }
+
+  duration(d) { this._duration = d; return this }
+  ease(easeFn)    { this._easing = easeFn; return this }
+  delay(d)    { this._delay    = d;  return this }
+  loop(v)     { this._loop     = (v === undefined) ? true : v; return this }
+  yoyo(v)     { this._pingpong = (v === undefined) ? true : v; this._loop = true; return this }
+
+  onUpdate(handler) { this._onUpdate = handler; return this }
+  onDone(handler)   { this._onDone = handler; return this }
+  onStart(handler)  { this._onStart = handler; return this }
+
+  then(nextTween) { this._chain = nextTween; return nextTween }
+
+  pause()  { this._paused = true;  return this }
+  resume() { this._paused = false; return this }
+
+  reset() {
+    this._elapsed = 0
+    this._started = false
+    this._done    = false
+    each p in this._props { p.start = this._target[p.key] }
+    return this
+  }
+
+  update(dt) {
+    if (this._done || this._paused) { return }
+    if (this._delay > 0) {
+      this._delay -= dt
+      return
+    }
+    if (!this._started) {
+      this._started = true
+      each p in this._props { p.start = this._target[p.key] }
+      if (this._onStart) { this._onStart(this._target) }
+    }
+    this._elapsed += dt
+    var rawT = this._duration > 0 ? this._elapsed / this._duration : 1
+    if (rawT > 1) { rawT = 1 }
+    var t = rawT
+    if (this._pingpong && rawT > 0.5) {
+      t = 1 - (rawT - 0.5) * 2
+    } else if (this._pingpong) {
+      t = rawT * 2
+    }
+    val et = this._easing(t)
+    each p in this._props {
+      if (p.isNum) {
+        this._target[p.key] = p.start + (p.end - p.start) * et
+      }
+    }
+    if (this._onUpdate) { this._onUpdate(this._target, et) }
+    if (rawT >= 1) {
+      if (this._loop) {
+        this._elapsed = 0
+      } else {
+        this._done = true
+        if (this._onDone) { this._onDone(this._target) }
+        if (this._chain) { TweenManager._active.push(this._chain) }
+      }
+    }
+  }
+
+  isDone() { return this._done }
+}
+
+class TweenManager {
+  constructor() {
+    this._tweens = []
+  }
+
+  create(target) {
+    val t = new Tween(target)
+    this._tweens.push(t)
+    return t
+  }
+
+  to(target, props, duration, easing) {
+    val t = this.create(target)
+    t.to(props, duration, easing)
+    return t
+  }
+
+  update(dt) {
+    var i = this._tweens.length - 1
+    while (i >= 0) {
+      val tw = this._tweens[i]
+      tw.update(dt)
+      if (tw.isDone() && !tw._loop) {
+        this._tweens.splice(i, 1)
+      }
+      i--
+    }
+  }
+
+  killAll()     { this._tweens = [] }
+  count()       { return this._tweens.length }
+  kill(target)  {
+    this._tweens = this._tweens.filter(t => t._target !== target)
+  }
+}
+
+TweenManager._active = []
+
+fn createTweenManager() {
+  return new TweenManager()
+}
+
+exports.Easing        = Easing
+exports.Tween         = Tween
+exports.TweenManager  = TweenManager
+exports.createTweenManager = createTweenManager

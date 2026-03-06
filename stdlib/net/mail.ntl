@@ -1,0 +1,112 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+// (c) David Dev 2026. All rights reserved.
+
+*// ntl:mail — send email via SMTP, no dependencies
+*// import it: val { Mailer } = require("ntl:mail")
+*//
+*// val mailer = new Mailer({ host: "smtp.gmail.com", port: 587, user: "x@gmail.com", pass: "..." })
+*// await mailer.send({ to: "user@example.com", subject: "Hello", text: "Hi!" })
+
+val _net    = require("net")
+val _tls    = require("tls")
+val _crypto = require("crypto")
+
+class Mailer {
+  init(opts) {
+    val o = opts || {}
+    this.host = o.host || "localhost"    *// SMTP server hostname
+    this.port = o.port || 587            *// 587 = STARTTLS, 465 = SSL, 25 = plain
+    this.user = o.user || ""             *// SMTP username (usually your email)
+    this.pass = o.pass || ""             *// SMTP password or app password
+    this.from = o.from || o.user || ""   *// default From address
+    this.secure = o.secure || (o.port === 465)
+  }
+
+  *// send({ to, subject, text, html, from, cc, bcc }) → Promise
+  async send(msg) {
+    val from    = msg.from || this.from
+    val to      = Array.isArray(msg.to) ? msg.to : [msg.to]
+    val subject = msg.subject || "(no subject)"
+    val text    = msg.text || ""
+    val html    = msg.html || ""
+    val boundary = "ntl_" + _crypto.randomBytes(8).toString("hex")
+
+    val headers = [
+      "From: " + from,
+      "To: " + to.join(", "),
+      (msg.cc  ? "Cc: " + msg.cc  : null),
+      (msg.bcc ? "Bcc: " + msg.bcc : null),
+      "Subject: " + subject,
+      "MIME-Version: 1.0",
+      "Content-Type: multipart/alternative; boundary=\"" + boundary + "\"",
+      "Date: " + new Date().toUTCString(),
+      "",
+    ].filter(v => v !== null).join("\r\n")
+
+    var body = "--" + boundary + "\r\n"
+    body += "Content-Type: text/plain; charset=utf-8\r\n\r\n" + text + "\r\n"
+    if (html) {
+      body += "--" + boundary + "\r\n"
+      body += "Content-Type: text/html; charset=utf-8\r\n\r\n" + html + "\r\n"
+    }
+    body += "--" + boundary + "--\r\n"
+
+    val rawMessage = headers + "\r\n" + body
+    return this._sendSmtp(from, to, rawMessage)
+  }
+
+  *// _sendSmtp — raw SMTP conversation
+  async _sendSmtp(from, recipients, message) {
+    return new Promise((resolve, reject) => {
+      val socket = this.secure
+        ? _tls.connect(this.port, this.host)
+        : _net.createConnection(this.port, this.host)
+
+      var step = 0
+      var buf  = ""
+
+      val write = (cmd) => { socket.write(cmd + "\r\n") }
+
+      val process2 = (line) => {
+        val code = parseInt(line)
+        if (step === 0 && code === 220)   { write("EHLO localhost"); step = 1; return }
+        if (step === 1 && code === 250) {
+          if (this.user) {
+            write("AUTH LOGIN"); step = 2
+          } else {
+            write("MAIL FROM:<" + from + ">"); step = 4
+          }
+          return
+        }
+        if (step === 2 && code === 334) { write(Buffer.from(this.user).toString("base64")); step = 3; return }
+        if (step === 3 && code === 334) { write(Buffer.from(this.pass).toString("base64")); step = 4; return }
+        if (step === 4 && code === 235) { write("MAIL FROM:<" + from + ">"); step = 5; return }
+        if (step === 4 && code === 250) { write("MAIL FROM:<" + from + ">"); step = 5; return }
+        if (step === 5 && code === 250) {
+          val rcpt = recipients[0]
+          write("RCPT TO:<" + rcpt + ">")
+          step = 6
+          return
+        }
+        if (step === 6 && code === 250) { write("DATA"); step = 7; return }
+        if (step === 7 && code === 354) { write(message + "\r\n."); step = 8; return }
+        if (step === 8 && code === 250) { write("QUIT"); step = 9; return }
+        if (step === 9 && code === 221) { socket.destroy(); resolve({ accepted: recipients }); return }
+        if (code >= 400) { socket.destroy(); reject(new Error("SMTP error: " + line)); }
+      }
+
+      socket.on("data", (chunk) => {
+        buf += chunk.toString()
+        val lines = buf.split("\r\n")
+        buf = lines.pop()
+        for val line of lines {
+          if (line) { process2(line) }
+        }
+      })
+      socket.on("error", reject)
+    })
+  }
+}
+
+export { Mailer }

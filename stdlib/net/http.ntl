@@ -1,0 +1,290 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+// (c) David Dev 2026. All rights reserved.
+
+*// ntl:http — full HTTP server with routing, middleware, SSE, multipart
+*// import it: import { createServer } from "ntl:http"
+
+val _http   = require("http")
+val _https  = require("https")
+val _url    = require("url")
+val _path   = require("path")
+val _fs     = require("fs")
+val _crypto = require("crypto")
+val _zlib   = require("zlib")
+
+*// ─── Request helpers ──────────────────────────────────────────────────
+
+fn _readBody(req) {
+  return new Promise((resolve, reject) => {
+    val chunks = []
+    req.on("data", c => chunks.push(c))
+    req.on("end",  () => resolve(Buffer.concat(chunks)))
+    req.on("error", reject)
+  })
+}
+
+fn _parseQuery(qs) {
+  if (!qs) { return {} }
+  val result = {}
+  for val pair of qs.split("&") {
+    val idx = pair.indexOf("=")
+    if (idx > 0) {
+      val k = decodeURIComponent(pair.slice(0, idx))
+      val v = decodeURIComponent(pair.slice(idx + 1))
+      result[k] = v
+    }
+  }
+  return result
+}
+
+*// ─── Response helpers ─────────────────────────────────────────────────
+
+class Response2 {
+  init(res) {
+    this._res     = res
+    this._headers = {}
+    this._sent    = false
+  }
+
+  header(key, value) { this._headers[key] = value; return this }
+
+  status(code) { this._statusCode = code; return this }
+
+  *// json({ ok: true }) → sends JSON with correct Content-Type
+  json(data) {
+    val body = JSON.stringify(data)
+    this._res.writeHead(this._statusCode || 200, Object.assign({
+      "Content-Type":   "application/json",
+      "Content-Length": Buffer.byteLength(body)
+    }, this._headers))
+    this._res.end(body)
+    this._sent = true
+  }
+
+  *// text("hello") → sends plain text
+  text(body) {
+    val b = String(body)
+    this._res.writeHead(this._statusCode || 200, Object.assign({
+      "Content-Type":   "text/plain; charset=utf-8",
+      "Content-Length": Buffer.byteLength(b)
+    }, this._headers))
+    this._res.end(b)
+    this._sent = true
+  }
+
+  *// html("<h1>Hello</h1>") → sends HTML
+  html(body) {
+    val b = String(body)
+    this._res.writeHead(this._statusCode || 200, Object.assign({
+      "Content-Type":   "text/html; charset=utf-8",
+      "Content-Length": Buffer.byteLength(b)
+    }, this._headers))
+    this._res.end(b)
+    this._sent = true
+  }
+
+  *// redirect("/login") → 302 redirect
+  redirect(url2, code) {
+    this._res.writeHead(code || 302, { "Location": url2 })
+    this._res.end()
+    this._sent = true
+  }
+
+  *// send(data) → auto-detect content type
+  send(data) {
+    if (typeof data === "object") { return this.json(data) }
+    this.text(String(data))
+  }
+
+  *// stream() → returns the raw Node.js response for SSE / chunked output
+  stream() { return this._res }
+
+  *// sse() → start a Server-Sent Events stream
+  sse() {
+    this._res.writeHead(200, {
+      "Content-Type":  "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection":    "keep-alive"
+    })
+    return {
+      send: (data, event, id) => {
+        var msg = ""
+        if (id)    { msg += `id: ${id}\n` }
+        if (event) { msg += `event: ${event}\n` }
+        msg += `data: ${typeof data === "object" ? JSON.stringify(data) : String(data)}\n\n`
+        this._res.write(msg)
+      },
+      close: () => this._res.end()
+    }
+  }
+}
+
+*// ─── Router ───────────────────────────────────────────────────────────
+
+class Router {
+  init() {
+    this._routes     = []        *// array of { method, pattern, handler }
+    this._middleware = []        *// array of middleware functions
+    this._prefix     = ""
+  }
+
+  *// use(fn) → add middleware that runs before every handler
+  use(fn2) { this._middleware.push(fn2); return this }
+
+  *// _addRoute(method, path, handler) — internal
+  _addRoute(method, path2, fn2) {
+    val keys = []
+    val regexStr = path2
+      .replace(/:([a-zA-Z_]\w*)/g, (_, k) => { keys.push(k); return "([^/]+)" })
+      .replace(/\*/g, ".*")
+    val pattern = new RegExp("^" + this._prefix + regexStr + "$")
+    this._routes.push({ method, pattern, keys, fn: fn2 })
+    return this
+  }
+
+  *// Route registration: get("/users", handler)  post("/users", handler)  etc.
+  get(path2, fn2)    { return this._addRoute("GET",    path2, fn2) }
+  post(path2, fn2)   { return this._addRoute("POST",   path2, fn2) }
+  put(path2, fn2)    { return this._addRoute("PUT",    path2, fn2) }
+  patch(path2, fn2)  { return this._addRoute("PATCH",  path2, fn2) }
+  delete(path2, fn2) { return this._addRoute("DELETE", path2, fn2) }
+  any(path2, fn2)    { return this._addRoute("ANY",    path2, fn2) }
+
+  *// handle(req, res) → try to match a route and call its handler
+  async handle(req, res) {
+    val parsed   = _url.parse(req.url, true)
+    val pathname = parsed.pathname || "/"
+    val method   = req.method || "GET"
+
+    val request = {
+      method,
+      url:     req.url,
+      path:    pathname,
+      query:   parsed.query,
+      headers: req.headers,
+      params:  {},
+      raw:     req,
+      *// body() → parse request body as JSON or text
+      async body() {
+        val buf = await _readBody(req)
+        val ct  = req.headers["content-type"] || ""
+        if (ct.includes("application/json")) { try { return JSON.parse(buf.toString("utf8")) } catch (_) { return {} } }
+        return buf.toString("utf8")
+      },
+      async json() {
+        val buf = await _readBody(req)
+        return JSON.parse(buf.toString("utf8"))
+      }
+    }
+
+    val response = new Response2(res)
+
+    for val mw of this._middleware {
+      var done = false
+      await mw(request, response, () => { done = true })
+      if (!done && response._sent) { return }
+    }
+
+    for val route of this._routes {
+      if (route.method !== method && route.method !== "ANY") { continue }
+      val match = pathname.match(route.pattern)
+      if (!match) { continue }
+      for (var i = 0; i < route.keys.length; i++) {
+        request.params[route.keys[i]] = decodeURIComponent(match[i + 1])
+      }
+      await route.fn(request, response)
+      return
+    }
+
+    *// No route matched → 404
+    res.writeHead(404, { "Content-Type": "application/json" })
+    res.end(JSON.stringify({ error: "Not Found", path: pathname }))
+  }
+}
+
+*// ─── Server ───────────────────────────────────────────────────────────
+
+class Server extends Router {
+  init(opts) {
+    super()
+    this._opts = opts || {}
+    this._server = null
+  }
+
+  *// listen(3000) → start HTTP server on a port
+  listen(port, host) {
+    this._server = _http.createServer((req, res) => this.handle(req, res))
+    return new Promise((resolve) => {
+      this._server.listen(port || 3000, host || "0.0.0.0", () => {
+        resolve({ port: port || 3000, host: host || "0.0.0.0" })
+      })
+    })
+  }
+
+  *// close() → stop the server
+  close() {
+    return new Promise((resolve, reject) => {
+      have this._server {
+        this._server.close(err => err ? reject(err) : resolve())
+      } else {
+        resolve()
+      }
+    })
+  }
+}
+
+*// createServer() → new Server instance ready to configure and listen
+fn createServer(opts) {
+  return new Server(opts)
+}
+
+*// ─── HTTP Client ──────────────────────────────────────────────────────
+
+*// http.get("https://api.example.com/data") → parsed JSON response
+val http = {
+  async request(url2, opts) {
+    opts = opts || {}
+    return new Promise((resolve, reject) => {
+      val parsed = typeof url2 === "string" ? new URL(url2) : url2
+      val lib = parsed.protocol === "https:" ? _https : _http
+      val options = {
+        hostname: parsed.hostname,
+        port:     parsed.port || (parsed.protocol === "https:" ? 443 : 80),
+        path:     parsed.pathname + (parsed.search || ""),
+        method:   opts.method || "GET",
+        headers:  opts.headers || {}
+      }
+      val body = opts.body ? JSON.stringify(opts.body) : null
+      if (body) {
+        options.headers["Content-Type"]   = "application/json"
+        options.headers["Content-Length"] = Buffer.byteLength(body)
+      }
+      val req = lib.request(options, res => {
+        val chunks = []
+        res.on("data", c => chunks.push(c))
+        res.on("end",  () => {
+          val text = Buffer.concat(chunks).toString("utf8")
+          val ct   = res.headers["content-type"] || ""
+          try {
+            val data = ct.includes("application/json") ? JSON.parse(text) : text
+            resolve({ status: res.statusCode, headers: res.headers, data, text })
+          } catch (_) {
+            resolve({ status: res.statusCode, headers: res.headers, data: text, text })
+          }
+        })
+      })
+      req.on("error", reject)
+      if (body) { req.write(body) }
+      req.end()
+    })
+  },
+
+  async get(url2, opts)  { return (await http.request(url2, Object.assign({ method: "GET" },  opts))).data },
+  async post(url2, body) { return (await http.request(url2, { method: "POST",   body })).data },
+  async put(url2, body)  { return (await http.request(url2, { method: "PUT",    body })).data },
+  async patch(url2, body){ return (await http.request(url2, { method: "PATCH",  body })).data },
+  async del(url2)        { return (await http.request(url2, { method: "DELETE" })).data },
+}
+
+export { createServer, Server, Router, http }

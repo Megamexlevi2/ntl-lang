@@ -1,0 +1,707 @@
+val FONT_W = 6
+val FONT_H = 8
+
+fn buildFontData() {
+  val d = {}
+  d[' ']  = [0,0,0,0,0]
+  d['!']  = [0,0,95,0,0]
+  d['"']  = [0,7,0,7,0]
+  d['#']  = [20,127,20,127,20]
+  d['%']  = [99,19,8,100,99]
+  d['&']  = [54,73,85,34,80]
+  d["'"]  = [0,5,3,0,0]
+  d['(']  = [0,28,34,65,0]
+  d[')']  = [0,65,34,28,0]
+  d['*']  = [20,8,62,8,20]
+  d['+']  = [8,8,62,8,8]
+  d[',']  = [0,80,48,0,0]
+  d['-']  = [8,8,8,8,8]
+  d['.']  = [0,96,96,0,0]
+  d['/']  = [32,16,8,4,2]
+  d['0']  = [62,81,73,69,62]
+  d['1']  = [0,66,127,64,0]
+  d['2']  = [98,81,73,73,70]
+  d['3']  = [34,65,73,73,54]
+  d['4']  = [24,20,18,127,16]
+  d['5']  = [39,69,69,69,57]
+  d['6']  = [60,74,73,73,48]
+  d['7']  = [1,113,9,5,3]
+  d['8']  = [54,73,73,73,54]
+  d['9']  = [6,73,73,41,30]
+  d[':']  = [0,54,54,0,0]
+  d[';']  = [0,86,54,0,0]
+  d['<']  = [8,20,34,65,0]
+  d['=']  = [20,20,20,20,20]
+  d['>']  = [0,65,34,20,8]
+  d['?']  = [2,1,81,9,6]
+  d['@']  = [62,65,93,89,78]
+  d['A']  = [126,9,9,9,126]
+  d['B']  = [127,73,73,73,54]
+  d['C']  = [62,65,65,65,34]
+  d['D']  = [127,65,65,34,28]
+  d['E']  = [127,73,73,65,65]
+  d['F']  = [127,9,9,9,1]
+  d['G']  = [62,65,65,81,115]
+  d['H']  = [127,8,8,8,127]
+  d['I']  = [0,65,127,65,0]
+  d['J']  = [32,64,65,63,1]
+  d['K']  = [127,8,20,34,65]
+  d['L']  = [127,64,64,64,64]
+  d['M']  = [127,2,12,2,127]
+  d['N']  = [127,4,8,16,127]
+  d['O']  = [62,65,65,65,62]
+  d['P']  = [127,9,9,9,6]
+  d['Q']  = [62,65,81,33,94]
+  d['R']  = [127,9,25,41,70]
+  d['S']  = [38,73,73,73,50]
+  d['T']  = [1,1,127,1,1]
+  d['U']  = [63,64,64,64,63]
+  d['V']  = [31,32,64,32,31]
+  d['W']  = [63,64,56,64,63]
+  d['X']  = [99,20,8,20,99]
+  d['Y']  = [3,4,120,4,3]
+  d['Z']  = [97,81,73,69,67]
+  d['a']  = [32,84,84,84,120]
+  d['b']  = [127,68,68,68,56]
+  d['c']  = [56,68,68,68,32]
+  d['d']  = [56,68,68,72,127]
+  d['e']  = [56,84,84,84,24]
+  d['f']  = [8,127,9,1,2]
+  d['g']  = [12,82,82,82,62]
+  d['h']  = [127,8,4,4,120]
+  d['i']  = [0,68,125,64,0]
+  d['j']  = [32,64,68,61,0]
+  d['k']  = [127,16,40,68,0]
+  d['l']  = [0,65,127,64,0]
+  d['m']  = [124,4,120,4,120]
+  d['n']  = [124,8,4,4,120]
+  d['o']  = [56,68,68,68,56]
+  d['p']  = [124,20,20,20,8]
+  d['q']  = [8,20,20,24,124]
+  d['r']  = [124,8,4,4,8]
+  d['s']  = [72,84,84,84,36]
+  d['t']  = [4,63,68,64,32]
+  d['u']  = [60,64,64,32,124]
+  d['v']  = [28,32,64,32,28]
+  d['w']  = [60,64,48,64,60]
+  d['x']  = [68,40,16,40,68]
+  d['y']  = [12,80,80,80,60]
+  d['z']  = [68,100,84,76,68]
+  d['[']  = [0,127,65,65,0]
+  d[']']  = [0,65,65,127,0]
+  d['_']  = [64,64,64,64,64]
+  d['\\']= [2,4,8,16,32]
+  return d
+}
+
+val FONT_DATA = buildFontData()
+
+fn getGlyph(ch) {
+  val g = FONT_DATA[ch]
+  if (g) { return g }
+  return [62,65,65,65,62]
+}
+
+class UIRenderer {
+  constructor(buffer, width, height) {
+    this.buf    = buffer
+    this.width  = width
+    this.height = height
+  }
+
+  setBuffer(buf) { this.buf = buf }
+
+  _setPixel(x, y, r, g, b, a) {
+    x = x | 0; y = y | 0
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) { return }
+    val off = (y * this.width + x) * 4
+    if (a === undefined || a >= 255) {
+      this.buf[off]   = r
+      this.buf[off+1] = g
+      this.buf[off+2] = b
+      this.buf[off+3] = 255
+    } else {
+      val ia = a / 255
+      this.buf[off]   = (this.buf[off]   * (1 - ia) + r * ia) | 0
+      this.buf[off+1] = (this.buf[off+1] * (1 - ia) + g * ia) | 0
+      this.buf[off+2] = (this.buf[off+2] * (1 - ia) + b * ia) | 0
+    }
+  }
+
+  rect(x, y, w, h, r, g, b, a) {
+    val ex = x + w, ey = y + h
+    var py = y
+    while (py < ey) {
+      var px = x
+      while (px < ex) {
+        this._setPixel(px, py, r, g, b, a)
+        px++
+      }
+      py++
+    }
+  }
+
+  rectBorder(x, y, w, h, r, g, b, thick) {
+    thick = thick || 1
+    this.rect(x,       y,       w,     thick, r, g, b)
+    this.rect(x,       y+h-thick, w,   thick, r, g, b)
+    this.rect(x,       y,       thick, h,     r, g, b)
+    this.rect(x+w-thick, y,     thick, h,     r, g, b)
+  }
+
+  rectRounded(x, y, w, h, radius, r, g, b, a) {
+    radius = Math.min(radius, w/2, h/2)
+    this.rect(x+radius, y, w-radius*2, h, r, g, b, a)
+    this.rect(x, y+radius, radius, h-radius*2, r, g, b, a)
+    this.rect(x+w-radius, y+radius, radius, h-radius*2, r, g, b, a)
+    var i = 0
+    while (i <= radius) {
+      val off = Math.sqrt(radius*radius - i*i) | 0
+      this.rect(x+radius-i, y+radius-off, 1, 1, r, g, b, a)
+      this.rect(x+w-radius+i-1, y+radius-off, 1, 1, r, g, b, a)
+      this.rect(x+radius-i, y+h-radius+off-1, 1, 1, r, g, b, a)
+      this.rect(x+w-radius+i-1, y+h-radius+off-1, 1, 1, r, g, b, a)
+      i++
+    }
+  }
+
+  circle(cx, cy, radius, r, g, b, a) {
+    val x0 = (cx - radius) | 0
+    val x1 = (cx + radius) | 0
+    val y0 = (cy - radius) | 0
+    val y1 = (cy + radius) | 0
+    var py = y0
+    while (py <= y1) {
+      var px = x0
+      while (px <= x1) {
+        val dx = px - cx, dy = py - cy
+        if (dx*dx + dy*dy <= radius*radius) {
+          this._setPixel(px, py, r, g, b, a)
+        }
+        px++
+      }
+      py++
+    }
+  }
+
+  line(x0, y0, x1, y1, r, g, b, thick) {
+    thick = thick || 1
+    x0=x0|0; y0=y0|0; x1=x1|0; y1=y1|0
+    var dx = Math.abs(x1-x0), dy = Math.abs(y1-y0)
+    var sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1
+    var err = dx - dy
+    var cx = x0, cy = y0
+    var steps = dx + dy + 2
+    while (steps > 0) {
+      this.rect(cx - (thick>>1), cy - (thick>>1), thick, thick, r, g, b)
+      if (cx === x1 && cy === y1) { steps = 0 }
+      val e2 = err * 2
+      if (e2 > -dy) { err -= dy; cx += sx }
+      if (e2 <  dx) { err += dx; cy += sy }
+      steps--
+    }
+  }
+
+  char(ch, x, y, r, g, b, scale) {
+    scale    = scale || 1
+    val glyph = getGlyph(ch)
+    var col   = 0
+    while (col < 5) {
+      val bits = glyph[col]
+      var row = 0
+      while (row < 8) {
+        if (bits & (1 << row)) {
+          this.rect(x + col * scale, y + row * scale, scale, scale, r, g, b)
+        }
+        row++
+      }
+      col++
+    }
+    return (FONT_W) * scale
+  }
+
+  text(str, x, y, r, g, b, scale) {
+    scale    = scale || 1
+    var cx   = x
+    var i    = 0
+    while (i < str.length) {
+      val ch = str[i]
+      if (ch === '\n') { y += FONT_H * scale; cx = x }
+      else { cx += this.char(ch, cx, y, r, g, b, scale) }
+      i++
+    }
+    return this
+  }
+
+  textWidth(str, scale) {
+    scale = scale || 1
+    return str.length * FONT_W * scale
+  }
+
+  gradient(x, y, w, h, r1, g1, b1, r2, g2, b2, vertical) {
+    var py = y
+    while (py < y + h) {
+      var px = x
+      while (px < x + w) {
+        val t = vertical ? (py - y) / h : (px - x) / w
+        this._setPixel(px, py,
+          (r1 + (r2-r1)*t) | 0,
+          (g1 + (g2-g1)*t) | 0,
+          (b1 + (b2-b1)*t) | 0
+        )
+        px++
+      }
+      py++
+    }
+  }
+}
+
+class UINode {
+  constructor(opts) {
+    opts          = opts || {}
+    this.x        = opts.x || 0
+    this.y        = opts.y || 0
+    this.w        = opts.w || opts.width  || 100
+    this.h        = opts.h || opts.height || 30
+    this.visible  = opts.visible !== false
+    this.enabled  = opts.enabled !== false
+    this.children = []
+    this.parent   = null
+    this._hovered = false
+    this._pressed = false
+    this.tag      = opts.tag || ''
+  }
+  add(child) { child.parent = this; this.children.push(child); return this }
+  remove(child) { this.children = this.children.filter(c => c !== child); return this }
+  contains(mx, my) {
+    val ax = this._absX(), ay = this._absY()
+    return mx >= ax && mx <= ax+this.w && my >= ay && my <= ay+this.h
+  }
+  _absX() { return this.parent ? this.parent._absX() + this.x : this.x }
+  _absY() { return this.parent ? this.parent._absY() + this.y : this.y }
+  draw(ui) {}
+  update(input) {
+    each child in this.children { if (child.visible) { child.update(input) } }
+  }
+  render(ui) {
+    if (!this.visible) { return }
+    this.draw(ui)
+    each child in this.children { if (child.visible) { child.render(ui) } }
+  }
+}
+
+class Panel extends UINode {
+  constructor(opts) {
+    super(opts)
+    opts = opts || {}
+    this.r       = opts.r !== undefined ? opts.r : 40
+    this.g       = opts.g !== undefined ? opts.g : 40
+    this.b       = opts.b !== undefined ? opts.b : 50
+    this.alpha   = opts.alpha !== undefined ? opts.alpha : 200
+    this.borderR = opts.borderR !== undefined ? opts.borderR : 80
+    this.borderG = opts.borderG !== undefined ? opts.borderG : 80
+    this.borderB = opts.borderB !== undefined ? opts.borderB : 100
+    this.border  = opts.border  !== false
+    this.radius  = opts.radius  || 0
+  }
+  draw(ui) {
+    val ax = this._absX(), ay = this._absY()
+    if (this.radius > 0) {
+      ui.rectRounded(ax, ay, this.w, this.h, this.radius, this.r, this.g, this.b, this.alpha)
+    } else {
+      ui.rect(ax, ay, this.w, this.h, this.r, this.g, this.b, this.alpha)
+    }
+    if (this.border) {
+      ui.rectBorder(ax, ay, this.w, this.h, this.borderR, this.borderG, this.borderB)
+    }
+  }
+}
+
+class Label extends UINode {
+  constructor(opts) {
+    super(opts)
+    opts = opts || {}
+    this.text    = opts.text   || ''
+    this.r       = opts.r !== undefined ? opts.r : 255
+    this.g       = opts.g !== undefined ? opts.g : 255
+    this.b       = opts.b !== undefined ? opts.b : 255
+    this.scale   = opts.scale  || 2
+    this.align   = opts.align  || 'left'
+    this.shadow  = opts.shadow !== false
+  }
+  draw(ui) {
+    val ax = this._absX(), ay = this._absY()
+    val tw = ui.textWidth(this.text, this.scale)
+    var tx = ax
+    if (this.align === 'center') { tx = ax + (this.w - tw) / 2 }
+    if (this.align === 'right')  { tx = ax + this.w - tw }
+    if (this.shadow) { ui.text(this.text, tx+1, ay+1, 0, 0, 0, this.scale) }
+    ui.text(this.text, tx | 0, ay | 0, this.r, this.g, this.b, this.scale)
+  }
+  setText(s) { this.text = s; return this }
+}
+
+class Button extends UINode {
+  constructor(opts) {
+    super(opts)
+    opts = opts || {}
+    this.label     = opts.label || opts.text || 'Button'
+    this.r         = opts.r !== undefined ? opts.r : 60
+    this.g         = opts.g !== undefined ? opts.g : 80
+    this.b         = opts.b !== undefined ? opts.b : 160
+    this.hoverR    = opts.hoverR !== undefined ? opts.hoverR : 80
+    this.hoverG    = opts.hoverG !== undefined ? opts.hoverG : 110
+    this.hoverB    = opts.hoverB !== undefined ? opts.hoverB : 210
+    this.pressR    = opts.pressR !== undefined ? opts.pressR : 40
+    this.pressG    = opts.pressG !== undefined ? opts.pressG : 55
+    this.pressB    = opts.pressB !== undefined ? opts.pressB : 120
+    this.textR     = opts.textR !== undefined ? opts.textR : 255
+    this.textG     = opts.textG !== undefined ? opts.textG : 255
+    this.textB     = opts.textB !== undefined ? opts.textB : 255
+    this.textScale = opts.textScale || 2
+    this.radius    = opts.radius    || 4
+    this._onClick  = opts.onClick   || null
+    this._onHover  = opts.onHover   || null
+    this._clicked  = false
+    this._holdTime = 0
+  }
+  draw(ui) {
+    val ax = this._absX(), ay = this._absY()
+    var cr, cg, cb
+    if (this._pressed) { cr=this.pressR; cg=this.pressG; cb=this.pressB }
+    else if (this._hovered) { cr=this.hoverR; cg=this.hoverG; cb=this.hoverB }
+    else { cr=this.r; cg=this.g; cb=this.b }
+    ui.rectRounded(ax, ay, this.w, this.h, this.radius, cr, cg, cb)
+    ui.rectBorder(ax, ay, this.w, this.h,
+      this._hovered ? 200 : 100,
+      this._hovered ? 200 : 100,
+      this._hovered ? 220 : 140, 1)
+    val tw = ui.textWidth(this.label, this.textScale)
+    val tx = (ax + (this.w - tw) / 2) | 0
+    val ty = (ay + (this.h - FONT_H * this.textScale) / 2) | 0
+    if (!this.enabled) {
+      ui.text(this.label, tx+1, ty+1, 0, 0, 0, this.textScale)
+      ui.text(this.label, tx, ty, 120, 120, 120, this.textScale)
+    } else {
+      ui.text(this.label, tx+1, ty+1, 0, 0, 0, this.textScale)
+      ui.text(this.label, tx, ty, this.textR, this.textG, this.textB, this.textScale)
+    }
+  }
+  update(input) {
+    if (!this.enabled) { return }
+    val mx = input.mouseX || 0
+    val my = input.mouseY || 0
+    val wasHover = this._hovered
+    this._hovered = this.contains(mx, my)
+    if (this._hovered && !wasHover && this._onHover) { this._onHover(this) }
+    val wasPressed = this._pressed
+    this._pressed = this._hovered && input.mouseButton(0)
+    this._clicked = wasPressed && !this._pressed && this._hovered
+    if (this._clicked && this._onClick) { this._onClick(this) }
+  }
+  onClick(handler) { this._onClick = handler; return this }
+  onHover(handler) { this._onHover = handler; return this }
+  wasClicked() { return this._clicked }
+}
+
+class ProgressBar extends UINode {
+  constructor(opts) {
+    super(opts)
+    opts = opts || {}
+    this.value    = opts.value    !== undefined ? opts.value    : 0.5
+    this.minVal   = opts.minVal   !== undefined ? opts.minVal   : 0
+    this.maxVal   = opts.maxVal   !== undefined ? opts.maxVal   : 1
+    this.bgR      = opts.bgR      !== undefined ? opts.bgR      : 30
+    this.bgG      = opts.bgG      !== undefined ? opts.bgG      : 30
+    this.bgB      = opts.bgB      !== undefined ? opts.bgB      : 40
+    this.fgR      = opts.fgR      !== undefined ? opts.fgR      : 60
+    this.fgG      = opts.fgG      !== undefined ? opts.fgG      : 200
+    this.fgB      = opts.fgB      !== undefined ? opts.fgB      : 100
+    this.showText = opts.showText !== false
+    this.label    = opts.label    || ''
+    this.vertical = opts.vertical || false
+  }
+  draw(ui) {
+    val ax = this._absX(), ay = this._absY()
+    val t = Math.max(0, Math.min(1, (this.value - this.minVal) / (this.maxVal - this.minVal)))
+    ui.rect(ax, ay, this.w, this.h, this.bgR, this.bgG, this.bgB)
+    if (this.vertical) {
+      val fh = (this.h * t) | 0
+      ui.rect(ax, ay + this.h - fh, this.w, fh, this.fgR, this.fgG, this.fgB)
+    } else {
+      val fw = (this.w * t) | 0
+      ui.rect(ax, ay, fw, this.h, this.fgR, this.fgG, this.fgB)
+    }
+    ui.rectBorder(ax, ay, this.w, this.h, 80, 80, 100)
+    if (this.showText) {
+      val pct  = Math.round(t * 100) + '%'
+      val disp = this.label ? this.label + ' ' + pct : pct
+      val tx   = (ax + (this.w - ui.textWidth(disp, 1)) / 2) | 0
+      val ty   = (ay + (this.h - FONT_H) / 2) | 0
+      ui.text(disp, tx, ty, 255, 255, 255, 1)
+    }
+  }
+  setValue(v) { this.value = v; return this }
+  addValue(d) { this.value = Math.max(this.minVal, Math.min(this.maxVal, this.value + d)); return this }
+}
+
+class Checkbox extends UINode {
+  constructor(opts) {
+    super(opts)
+    opts       = opts || {}
+    this.w     = opts.w || 20
+    this.h     = opts.h || 20
+    this.checked  = opts.checked  || false
+    this.label    = opts.label    || ''
+    this.labelR   = opts.labelR   !== undefined ? opts.labelR   : 255
+    this.labelG   = opts.labelG   !== undefined ? opts.labelG   : 255
+    this.labelB   = opts.labelB   !== undefined ? opts.labelB   : 255
+    this._onChange = opts.onChange || null
+    this._clicked  = false
+  }
+  draw(ui) {
+    val ax = this._absX(), ay = this._absY()
+    ui.rect(ax, ay, this.w, this.h, 30, 30, 40)
+    ui.rectBorder(ax, ay, this.w, this.h, this._hovered ? 180 : 100, this._hovered ? 180 : 100, 200)
+    if (this.checked) {
+      ui.rect(ax+3, ay+3, this.w-6, this.h-6, 60, 200, 100)
+    }
+    if (this.label) {
+      ui.text(this.label, ax + this.w + 6, ay + (this.h - FONT_H*2)/2, this.labelR, this.labelG, this.labelB, 2)
+    }
+  }
+  update(input) {
+    val mx = input.mouseX || 0
+    val my = input.mouseY || 0
+    val wasHover = this._hovered
+    this._hovered = this.contains(mx, my)
+    val wasPress = this._pressed
+    this._pressed = this._hovered && input.mouseButton(0)
+    this._clicked = wasPress && !this._pressed && this._hovered
+    if (this._clicked) {
+      this.checked = !this.checked
+      if (this._onChange) { this._onChange(this.checked, this) }
+    }
+  }
+  toggle() { this.checked = !this.checked; return this }
+}
+
+class Slider extends UINode {
+  constructor(opts) {
+    super(opts)
+    opts        = opts || {}
+    this.h      = opts.h || 20
+    this.minVal = opts.minVal !== undefined ? opts.minVal : 0
+    this.maxVal = opts.maxVal !== undefined ? opts.maxVal : 1
+    this.value  = opts.value  !== undefined ? opts.value  : 0.5
+    this.label  = opts.label  || ''
+    this._dragging = false
+    this._onChange = opts.onChange || null
+  }
+  draw(ui) {
+    val ax = this._absX(), ay = this._absY()
+    val t = (this.value - this.minVal) / (this.maxVal - this.minVal)
+    val trackY = ay + this.h/2 - 3
+    ui.rect(ax, trackY | 0, this.w, 6, 40, 40, 60)
+    val fx = (ax + t * this.w) | 0
+    ui.rect(ax, trackY | 0, fx - ax, 6, 60, 160, 255)
+    ui.circle(fx, ay + this.h/2, 8, this._dragging ? 100 : 80, this._dragging ? 200 : 160, 255)
+    ui.rectBorder(ax, trackY | 0, this.w, 6, 80, 80, 100)
+    if (this.label) {
+      val valStr = this.label + ': ' + this.value.toFixed(2)
+      ui.text(valStr, ax, ay - 14, 200, 200, 200, 1)
+    }
+  }
+  update(input) {
+    val ax = this._absX()
+    val mx = input.mouseX || 0
+    val my = input.mouseY || 0
+    this._hovered = this.contains(mx, my)
+    if (input.mouseButton(0) && this._hovered) { this._dragging = true }
+    if (!input.mouseButton(0)) { this._dragging = false }
+    if (this._dragging) {
+      val t = Math.max(0, Math.min(1, (mx - ax) / this.w))
+      val newVal = this.minVal + t * (this.maxVal - this.minVal)
+      if (newVal !== this.value) {
+        this.value = newVal
+        if (this._onChange) { this._onChange(newVal, this) }
+      }
+    }
+  }
+  setValue(v) { this.value = Math.max(this.minVal, Math.min(this.maxVal, v)); return this }
+}
+
+class TextInput extends UINode {
+  constructor(opts) {
+    super(opts)
+    opts         = opts || {}
+    this.text    = opts.text      || ''
+    this.placeholder = opts.placeholder || ''
+    this.maxLen  = opts.maxLen    || 64
+    this.focused = false
+    this._cursor = 0
+    this._blink  = 0
+    this._onSubmit = opts.onSubmit  || null
+    this._onChange = opts.onChange  || null
+  }
+  draw(ui) {
+    val ax = this._absX(), ay = this._absY()
+    ui.rect(ax, ay, this.w, this.h, 20, 20, 30)
+    ui.rectBorder(ax, ay, this.w, this.h,
+      this.focused ? 100 : 60,
+      this.focused ? 150 : 60,
+      this.focused ? 255 : 90, this.focused ? 2 : 1)
+    val disp = this.text || this.placeholder
+    val cr   = this.text ? 240 : 80
+    val cg   = this.text ? 240 : 80
+    val cb   = this.text ? 255 : 100
+    ui.text(disp.slice(0, 20), ax + 4, ay + (this.h - 16) / 2 | 0, cr, cg, cb, 2)
+    if (this.focused && (this._blink | 0) % 2 === 0) {
+      val cx = ax + 4 + this.text.length * FONT_W * 2
+      ui.rect(cx, ay + 4, 2, this.h - 8, 200, 200, 255)
+    }
+  }
+  update(input) {
+    val mx = input.mouseX || 0
+    val my = input.mouseY || 0
+    if (input.mouseButton(0)) {
+      this.focused = this.contains(mx, my)
+    }
+    if (!this.focused) { return }
+    this._blink += 0.05
+    val pressed = input.getLastKey ? input.getLastKey() : null
+    if (pressed) {
+      if (pressed === 'Enter') {
+        if (this._onSubmit) { this._onSubmit(this.text, this) }
+      } else if (pressed === 'Backspace') {
+        this.text = this.text.slice(0, -1)
+        if (this._onChange) { this._onChange(this.text, this) }
+      } else if (pressed.length === 1 && this.text.length < this.maxLen) {
+        this.text += pressed
+        if (this._onChange) { this._onChange(this.text, this) }
+      }
+    }
+  }
+  clear()       { this.text = ''; return this }
+  getValue()    { return this.text }
+}
+
+class UICanvas {
+  constructor(opts) {
+    opts         = opts || {}
+    this.width   = opts.width  || 1280
+    this.height  = opts.height || 720
+    this._renderer = null
+    this._roots    = []
+    this._input    = null
+  }
+
+  attachRenderer(buffer, width, height) {
+    this._renderer = new UIRenderer(buffer, width, height)
+    this.width     = width
+    this.height    = height
+    return this
+  }
+
+  attachInput(inputSystem) {
+    this._input = inputSystem
+    return this
+  }
+
+  add(node) {
+    this._roots.push(node)
+    return node
+  }
+
+  remove(node) {
+    this._roots = this._roots.filter(r => r !== node)
+    return this
+  }
+
+  update(input) {
+    val inp = input || this._input
+    if (!inp) { return }
+    each root in this._roots { root.update(inp) }
+  }
+
+  render(buffer) {
+    if (buffer && this._renderer) { this._renderer.setBuffer(buffer) }
+    if (!this._renderer) { return }
+    each root in this._roots { root.render(this._renderer) }
+  }
+
+  createPanel(x, y, w, h, opts) {
+    val p = new Panel(Object.assign({ x, y, w, h }, opts || {}))
+    this.add(p)
+    return p
+  }
+
+  createLabel(x, y, text, opts) {
+    val lbl = new Label(Object.assign({ x, y, text }, opts || {}))
+    this.add(lbl)
+    return lbl
+  }
+
+  createButton(x, y, w, h, label, onClick) {
+    val btn = new Button({ x, y, w, h, label })
+    if (onClick) { btn.onClick(onClick) }
+    this.add(btn)
+    return btn
+  }
+
+  createProgressBar(x, y, w, h, opts) {
+    val pb = new ProgressBar(Object.assign({ x, y, w, h }, opts || {}))
+    this.add(pb)
+    return pb
+  }
+
+  createCheckbox(x, y, label, opts) {
+    val cb = new Checkbox(Object.assign({ x, y, label }, opts || {}))
+    this.add(cb)
+    return cb
+  }
+
+  createSlider(x, y, w, opts) {
+    val sl = new Slider(Object.assign({ x, y, w }, opts || {}))
+    this.add(sl)
+    return sl
+  }
+
+  createTextInput(x, y, w, opts) {
+    val ti = new TextInput(Object.assign({ x, y, w }, opts || {}))
+    this.add(ti)
+    return ti
+  }
+
+  drawFPS(fps, x, y) {
+    if (!this._renderer) { return }
+    this._renderer.rect((x || 8)-2, (y || 8)-2, 60, 14, 0, 0, 0, 180)
+    this._renderer.text('FPS:'+fps, x || 8, y || 8, 50, 255, 100, 1)
+  }
+
+  drawStats(stats, x, y) {
+    if (!this._renderer) { return }
+    val lines = [
+      'FPS: '  + (stats.fps || 0),
+      'TRI: '  + (stats.triangles || 0),
+      'RES: '  + (stats.width || 0) + 'x' + (stats.height || 0)
+    ]
+    var lx = x || 8, ly = y || 8
+    this._renderer.rect(lx-2, ly-2, 80, lines.length * 10 + 4, 0, 0, 0, 180)
+    each line in lines {
+      this._renderer.text(line, lx, ly, 100, 255, 100, 1)
+      ly += 10
+    }
+  }
+}
+
+exports.UIRenderer  = UIRenderer
+exports.UICanvas    = UICanvas
+exports.UINode      = UINode
+exports.Panel       = Panel
+exports.Label       = Label
+exports.Button      = Button
+exports.ProgressBar = ProgressBar
+exports.Checkbox    = Checkbox
+exports.Slider      = Slider
+exports.TextInput   = TextInput

@@ -11,7 +11,7 @@ const vm   = require('vm');
 const { Compiler, NTL_VERSION } = require('./src/compiler');
 const { format: fmtErr, R }     = require('./src/error');
 const { obfuscate }             = require('./modules/obf');
-const { Bundler }               = require('./src/bundler');
+const { Bundler }               = require('./src/runtime/bundler');
 
 const BOLD  = t => R.bold(t);
 const DIM   = t => R.dim(t);
@@ -21,7 +21,6 @@ const RED    = t => R.red(t);
 const GRAY   = t => R.gray(t);
 const YELLOW = t => R.yellow(t);
 
-// CLI argument parsing
 const args       = process.argv.slice(2);
 const flags      = {};
 const positional = [];
@@ -37,13 +36,12 @@ for (let i = 0; i < args.length; i++) {
     positional.push(a);
   }
 }
-// -e "code" / --eval "code" — run NTL code inline
 const inlineCode = flags.e || flags.eval || null;
 const cmd     = inlineCode ? '__eval__' : positional[0];
 const fileArg = positional[1];
 
 const HELP = `
-${BOLD(CYAN('NTL') + ' v3.0')} ${GRAY('— A language for people who ship things')}
+${BOLD(CYAN('NTL') + ' v3.5')} ${GRAY('— A language for people who ship things')}
 
 ${BOLD('USAGE')}
   ntl <command> [file] [options]
@@ -61,6 +59,7 @@ ${BOLD('COMMANDS')}
   ${GREEN('ide')}    [file.ntl]          Open the terminal editor
   ${GREEN('jit')}    <file.ntl>          Build with JIT instrumentation
   ${GREEN('wasm')}   <file.ntl>          Compile to WebAssembly
+  ${GREEN('binary')} <file.ntl> [-o out] Compile to a standalone executable binary
   ${GREEN('native')} <file.ntl>          Cross-compile (15 architectures)
   ${GREEN('opt')}    <file.ntl>          Show optimizer output
   ${GREEN('nax')}    <install|list|...>  Module manager
@@ -160,8 +159,6 @@ function ok(msg)   { process.stdout.write(GREEN('  ✓') + ' ' + msg + '\n'); }
 function info(msg) { process.stdout.write(GRAY('  ' + msg) + '\n'); }
 function warn(msg) { process.stderr.write(YELLOW('  warn') + ': ' + msg + '\n'); }
 
-// Build a full Node.js-compatible vm context
-// Supports require() for ANY npm package, built-in modules, ntl: modules
 function makeRunContext(absFile, extras) {
   const ctx = {
     require: (m) => {
@@ -171,7 +168,7 @@ function makeRunContext(absFile, extras) {
       if (m.startsWith('ntl:')) {
         const modName = m.slice(4);
         try {
-          const { loadStdlibModule } = require('./src/stdlib-loader');
+          const { loadStdlibModule } = require('./src/runtime/loader');
           return loadStdlibModule(modName);
         } catch(_) {
           try { return require(path.join(__dirname, 'modules', modName)); } catch(_2) {}
@@ -212,7 +209,6 @@ function makeRunContext(absFile, extras) {
   return ctx;
 }
 
-// runFile — main execution path with real JIT compilation
 function runFile(file, opts) {
   const absFile  = path.resolve(file);
   const source   = fs.readFileSync(file, 'utf-8');
@@ -248,16 +244,12 @@ function runFile(file, opts) {
       }
       process.exit(1);
     }
-    // Write to a temp file and require() it directly.
-    // This lets V8 run in a fresh, unrestricted context where TurboFan
-    // can fully optimize hot loops — no vm sandbox penalty.
     const os      = require('os');
     const crypto  = require('crypto');
     const tmpDir  = os.tmpdir();
     const tmpHash = crypto.createHash('md5').update(absFile + source.length).digest('hex').slice(0, 8);
     const tmpFile = path.join(tmpDir, 'ntl_run_' + tmpHash + '.js');
 
-    // Inject require shim so ntl: modules work in the child process
     const preamble = _buildRunPreamble(absFile);
     const fullCode = preamble + '\n' + result.code;
 
@@ -265,7 +257,6 @@ function runFile(file, opts) {
       fs.writeFileSync(tmpFile, fullCode, 'utf-8');
       require(tmpFile);
     } catch (e) {
-      // Ensure we have a proper Error-like object with a message
       const errMsg = (e && e.message) ? e.message : String(e);
       const errObj = Object.assign({}, e, { message: errMsg, file, sourceLines: srcLines, ntlError: false });
       process.stderr.write(fmtErr(errObj, srcLines));
@@ -276,11 +267,9 @@ function runFile(file, opts) {
   }
 }
 
-// Build a small preamble that patches require() for ntl: modules
 function _buildRunPreamble(absFile) {
   const ntlDir  = JSON.stringify(path.join(__dirname));
   const fileDir = JSON.stringify(path.dirname(absFile));
-  // We patch Module._resolveFilename so require('ntl:...') is handled globally
   return `(function(){
 const Module  = require('module');
 const _path   = require('path');
@@ -292,17 +281,16 @@ Module._resolveFilename = function(req, parent, isMain, opts) {
     return _orig(_path.resolve(_fileDir, req), parent, isMain, opts);
   }
   if (req.startsWith('ntl:')) {
-    const { resolveToPath } = require(_path.join(_ntlDir, 'src/module-resolver'));
+    const { resolveToPath } = require(_path.join(_ntlDir, 'src/runtime/resolver'));
     const p = resolveToPath(req);
     if (p) return p;
   }
   return _orig(req, parent, isMain, opts);
 };
-// Also handle ntl: in loader for self-hosted modules
 const _origLoad = Module._load.bind(Module);
 Module._load = function(req, parent, isMain) {
   if (req.startsWith('ntl:')) {
-    const { loadStdlibModule } = require(_path.join(_ntlDir, 'src/stdlib-loader'));
+    const { loadStdlibModule } = require(_path.join(_ntlDir, 'src/runtime/loader'));
     return loadStdlibModule(req.slice(4));
   }
   return _origLoad(req, parent, isMain);
@@ -339,8 +327,10 @@ function compileAndWrite(inputFile, outputFile, opts) {
   if (opts.obfuscate) code = obfuscate(code, { level: 'max', stringArray: true, encodeNumbers: true, deadCode: true });
   if (outputFile) {
     fs.mkdirSync(path.dirname(path.resolve(outputFile)), { recursive: true });
-    fs.writeFileSync(outputFile, code, 'utf-8');
-    const kb = (code.length / 1024).toFixed(1);
+    const preamble = _buildRunPreamble(path.resolve(inputFile));
+    const finalCode = preamble + '\n' + code;
+    fs.writeFileSync(outputFile, finalCode, 'utf-8');
+    const kb = (finalCode.length / 1024).toFixed(1);
     ok(`${path.relative('.', inputFile)}  ${GRAY('→')}  ${outputFile}  ${GRAY(kb + ' KB · ' + result.time + 'ms · ' + result.target)}`);
     for (const w of (result.warnings || [])) process.stdout.write(GRAY(`  ⚠ ${w.message}\n`));
   } else {
@@ -410,7 +400,7 @@ function initProject(dir) {
     $schema: 'https://ntlang.dev/schema/ntl.json', name: path.basename(path.resolve(dir)),
     version: '0.1.0', src: 'src', dist: 'dist',
     compilerOptions: { target: 'node', strict: true, minify: false, treeShake: true },
-    include: ['src/**/*.ntl'], exclude: ['node_modules', 'dist'],
+    include: ['src*.ntl'], exclude: ['node_modules', 'dist'],
   };
   const cfgPath = path.join(dir, 'ntl.json');
   if (!fs.existsSync(cfgPath)) { fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\n', 'utf-8'); ok(`Created ${CYAN('ntl.json')}`); }
@@ -448,7 +438,6 @@ function printVersion() {
   process.stdout.write(`\nntl ${NTL_VERSION}  ${GRAY('node ' + process.version + '  v8/' + process.versions.v8 + '  ' + process.platform + '/' + process.arch)}\n\n`);
 }
 
-// ntl -e "code" — evaluate NTL inline
 const eFlag = flags.e || flags.eval;
 if (eFlag && typeof eFlag === 'string') {
   const { JITRunner } = require('./src/jit/JITRuntime');
@@ -466,7 +455,6 @@ if (eFlag && typeof eFlag === 'string') {
   process.exit(0);
 }
 
-// ── Command dispatch ──────────────────────────────────────────────────────────
 switch (cmd) {
 
   case '__eval__': {
@@ -559,7 +547,7 @@ switch (cmd) {
   case 'fmt': {
     if (!fileArg)              die('Usage: ntl fmt <file.ntl>');
     if (!fs.existsSync(fileArg)) die(`File not found: ${fileArg}`);
-    const { format } = require('./src/formatter');
+    const { format } = require('./src/transforms/formatter');
     const src = fs.readFileSync(fileArg, 'utf-8');
     const formatted = format(src);
     const dest = flags.out || flags.o || fileArg;
@@ -575,7 +563,7 @@ switch (cmd) {
 
   case 'nax': {
     const sub = positional[1];
-    const { naxLoad, naxList, naxClear, createModuleJson } = require('./src/nax-modules');
+    const { naxLoad, naxList, naxClear, createModuleJson } = require('./src/runtime/nax');
     if (sub === 'install' || sub === 'add') {
       const url = positional[2];
       if (!url) die('Usage: ntl nax install <github.com/user/repo>');
@@ -722,6 +710,59 @@ switch (cmd) {
 
   case 'help': case '--help': case '-h': case undefined: {
     process.stdout.write(HELP + '\n');
+    break;
+  }
+
+  case 'binary': {
+    const { compileToBinary, compileToAllTargets, listTargets, TARGETS } = require('./src/native');
+    if (flags['list-targets'] || flags['targets']) {
+      process.stdout.write('\nAvailable targets:\n\n');
+      const tgts = listTargets();
+      const byOS = {};
+      for (const t of tgts) {
+        const info2 = TARGETS[t];
+        const os2 = info2.os;
+        if (!byOS[os2]) byOS[os2] = [];
+        byOS[os2].push({ name: t, ...info2 });
+      }
+      for (const [osName, list] of Object.entries(byOS)) {
+        process.stdout.write('  ' + CYAN(osName.toUpperCase()) + '\n');
+        for (const t of list) {
+          process.stdout.write('    ' + GREEN(t.name.padEnd(20)) + GRAY(t.triple) + '\n');
+        }
+      }
+      process.stdout.write('\n');
+      break;
+    }
+    const inputFile = fileArg;
+    if (!inputFile) { process.stderr.write('Usage: ntl binary <file.ntl> [-o output] [--target=linux-arm64] [--standalone] [--all]\n'); process.exit(1); }
+    const target = flags.target || flags.t || 'linux-x64';
+    const mode = flags.standalone ? 'standalone' : 'shell';
+    if (flags.all) {
+      const outDir = flags.out || flags.o || path.basename(inputFile, '.ntl') + '-dist';
+      info(`Compiling ${CYAN(inputFile)} for all targets → ${CYAN(outDir)}/`);
+      compileToAllTargets(inputFile, outDir, { mode }).then(results => {
+        let passed = 0, failed = 0;
+        for (const r of results) {
+          if (r.ok) { ok(GREEN(r.target.padEnd(22)) + GRAY(r.file)); passed++; }
+          else { process.stdout.write('  ' + RED('✗') + ' ' + r.target.padEnd(22) + RED(r.error || 'failed') + '\n'); failed++; }
+        }
+        process.stdout.write('\n');
+        ok(`${passed} targets built  ${failed ? RED(failed + ' failed') : ''}`);
+      }).catch(e => { process.stderr.write(RED('  Error: ') + e.message + '\n'); process.exit(1); });
+    } else {
+      const outName = flags.out || flags.o || path.basename(inputFile, '.ntl');
+      info(`Compiling ${CYAN(inputFile)} → ${CYAN(outName)}  ${GRAY('[' + target + ']')}`);
+      compileToBinary(inputFile, outName, { mode, target }).then(() => {
+        const finalFile = outName + (TARGETS[target] ? TARGETS[target].ext || '' : '');
+        try {
+          const kb = Math.round(require('fs').statSync(outName).size / 1024);
+          ok(`${CYAN(outName)}  ${GRAY(kb + ' KB')}  ${GRAY('[' + target + ']')}`);
+        } catch(_) { ok(CYAN(outName)); }
+        if (mode === 'standalone') info(GRAY('  Self-contained — bundled runtime, no external dependencies.'));
+        else info(GRAY('  Requires Node.js on target. Use --standalone to bundle runtime.'));
+      }).catch(e => { process.stderr.write(RED('  Error: ') + e.message + '\n'); process.exit(1); });
+    }
     break;
   }
 

@@ -1,0 +1,195 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+
+val nodeCrypto = require("crypto")
+
+val JS_RESERVED = new Set(["break","case","catch","class","const","continue","debugger","default","delete","do","else","export","extends","finally","for","function","if","import","in","instanceof","let","new","null","return","static","super","switch","this","raise","try","typeof","undefined","var","void","while","with","yield","async","await","enum","abstract","boolean","byte","char","double","final","float","goto","int","long","native","package","private","protected","public","short","synchronized","throws","transient","volatile","true","false","NaN","Infinity","Array","Object","String","Number","Boolean","Function","Symbol","BigInt","Error","Promise","Map","Set","RegExp","Date","Math","JSON","console","require","module","exports","process","Buffer","global","globalThis","__filename","__dirname","arguments","eval","parseInt","parseFloat","isNaN","isFinite","encodeURIComponent","decodeURIComponent","setTimeout","setInterval","clearTimeout","clearInterval","prototype","constructor","toString","valueOf","hasOwnProperty","length","name","call","apply","bind"])
+
+fn uid(seed, len) {
+  val h = nodeCrypto.createHash("sha256").update(String(seed || "") + Math.random() + process.pid).digest("hex")
+  return "_" + h.slice(0, len || 8)
+}
+
+fn hexEncode(str) {
+  return str.split("").map(c => "\\x" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("")
+}
+
+fn rc4(key, data) {
+  var s = []; var j = 0; var x; var res = ""
+  var i = 0
+  while (i < 256) { s[i] = i; i++ }
+  i = 0
+  while (i < 256) {
+    j = (j + s[i] + key.charCodeAt(i % key.length)) % 256
+    x = s[i]; s[i] = s[j]; s[j] = x; i++
+  }
+  i = 0; j = 0; var y = 0
+  while (y < data.length) {
+    i = (i + 1) % 256
+    j = (j + s[i]) % 256
+    x = s[i]; s[i] = s[j]; s[j] = x
+    res += String.fromCharCode(data.charCodeAt(y) ^ s[(s[i] + s[j]) % 256])
+    y++
+  }
+  return res
+}
+
+fn encodeNumber(n) {
+  if (typeof n !== "number" || isNaN(n) || !isFinite(n) || n < 0) { return String(n) }
+  if (n === 0) { return "(Math.PI-Math.PI)" }
+  if (n === 1) { return "(Math.PI/Math.PI)" }
+  if (Number.isInteger(n) && n <= 0xFFFFFF) {
+    val r1 = Math.floor(Math.random() * 10000) + 1000
+    val r2 = r1 - n
+    return `((${r1})-(${r2}))`
+  }
+  return String(n)
+}
+
+class Obfuscator {
+  constructor(opts) {
+    this.opts = Object.assign({
+      level: "max",
+      renameVars: true,
+      encodeStrings: true,
+      encodeNumbers: true,
+      controlFlow: true,
+      deadCode: true,
+      selfDefend: true,
+      domainLock: null,
+      debugProtect: true,
+      stringArray: true,
+      identifierPrefix: "_0x",
+      seed: Date.now() + Math.random()
+    }, opts || {})
+    this._strings  = []
+    this._strMap   = new Map()
+    this._counter  = 0
+    this._key      = nodeCrypto.createHash("sha256").update(String(this.opts.seed) + "ntl").digest("hex").slice(0, 32)
+  }
+
+  _newId(hint) {
+    val h = nodeCrypto.createHash("sha256").update(String(hint || "") + this._counter++ + this._key).digest("hex")
+    return this.opts.identifierPrefix + h.slice(0, 8)
+  }
+
+  _addString(str) {
+    if (this._strMap.has(str)) { return this._strMap.get(str) }
+    val idx = this._strings.length
+    this._strings.push(str)
+    this._strMap.set(str, idx)
+    return idx
+  }
+
+  _buildStringArray() {
+    if (!this._strings.length) { return "" }
+    val rc4Key    = this._key.slice(0, 16)
+    val arrName   = this._newId("arr")
+    val decodeName = this._newId("dec")
+    val encoded   = this._strings.map(s => rc4(rc4Key, s))
+    val hexEncoded = encoded.map(s => '"' + Array.from(s).map(c => "\\x" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("") + '"')
+    return `\nvar ${arrName}=[${hexEncoded.join(",")}];\nvar ${decodeName}=function(k,i){var str=${arrName}[i];var res="";for(var j=0;j<str.length;j++){res+=String.fromCharCode(str.charCodeAt(j)^k.charCodeAt(j%k.length));}return res;};\n`
+  }
+
+  _injectDeadCode() {
+    val junk = [
+      `var ${this._newId("j")}=function(){return Math.random();};`,
+      `if(false){var ${this._newId("j2")}=function(){}();}`,
+      `void 0x0;`,
+      `var ${this._newId("j3")}=(function(){var a=1;return a;})();`
+    ]
+    return junk[Math.floor(Math.random() * junk.length)]
+  }
+
+  _selfDefendCode() {
+    val fn2 = this._newId("sd")
+    return `(function(){var ${fn2}=function(){try{return eval.toString().length!==33;}catch(e){return true;}};if(!${fn2}()){while(true){debugger;}}})();`
+  }
+
+  _debugProtectCode() {
+    val fn2 = this._newId("dp")
+    return `setInterval(function(){if(typeof console!=="undefined"&&console.clear){console.clear();debugger;}},100);`
+  }
+
+  _domainLockCode(domains) {
+    val fn2     = this._newId("dl")
+    val domsStr = JSON.stringify(domains)
+    return `if(typeof window!=="undefined"){var ${fn2}=${domsStr};var ok=false;try{ok=${fn2}.some(function(d){return location.hostname===d||location.hostname.endsWith("."+d);});}catch(e){}if(!ok){document.body.innerHTML="";throw new Error("Invalid domain");}}`
+  }
+
+  obfuscateJS(code) {
+    var result   = code
+    val varNames = new Map()
+
+    result = result.replace(/\b([a-zA-Z_$][a-zA-Z0-9_$]*)\b/g, (tok) => {
+      if (JS_RESERVED.has(tok)) { return tok }
+      if (!this.opts.renameVars)  { return tok }
+      if (!varNames.has(tok))   { varNames.set(tok, this._newId(tok)) }
+      return varNames.get(tok)
+    })
+
+    if (this.opts.encodeNumbers) {
+      result = result.replace(/\b(\d+)\b/g, (tok3, n) => encodeNumber(parseInt(n)))
+    }
+
+    if (this.opts.encodeStrings) {
+      result = result.replace(/"((?:[^"\\]|\\.)*)"/g, (tok4, str) => {
+        if (!str) { return tok4 }
+        val i = this._addString(str)
+        return `"\\x${i.toString(16).padStart(2,"0")}"`
+      })
+    }
+
+    var header = ""
+    if (this.opts.stringArray && this._strings.length) { header += this._buildStringArray() + "\n" }
+    if (this.opts.selfDefend)  { header += this._selfDefendCode() + "\n" }
+    if (this.opts.debugProtect) { header += this._debugProtectCode() + "\n" }
+    if (this.opts.domainLock)  {
+      val doms = Array.isArray(this.opts.domainLock) ? this.opts.domainLock : [this.opts.domainLock]
+      header += this._domainLockCode(doms) + "\n"
+    }
+    if (this.opts.deadCode) {
+      var di = 0
+      while (di < 5) { header += this._injectDeadCode() + "\n"; di++ }
+    }
+
+    return `(function(){${header}${result}})();`
+  }
+
+  obfuscateNTLRuntime(code) {
+    val reserved = new Set([...JS_RESERVED])
+    val renames  = new Map()
+    var counter2 = 0
+    val chars    = "lIiOo"
+    val genName  = () => {
+      var s = "_"; var n = counter2++
+      while (true) { s += chars[n % chars.length]; n = Math.floor(n / chars.length); if (n === 0) { break } }
+      return s + this._newId("r").slice(-4)
+    }
+    var outCode = code.replace(/\b([a-zA-Z_$][a-zA-Z0-9_$]{2,})\b/g, (tok2) => {
+      if (reserved.has(tok2)) { return tok2 }
+      if (!renames.has(tok2)) { renames.set(tok2, genName()) }
+      return renames.get(tok2)
+    })
+    outCode = outCode.replace(/\b(\d+)\b/g, (m, n) => encodeNumber(parseInt(n)))
+    outCode = outCode.replace(/"([^"]{2,})"/g, (m, s) => `"${hexEncode(s)}"`)
+    var di = 0
+    while (di < 8) { outCode += "\n" + this._injectDeadCode(); di++ }
+    return `(function(){${outCode}})();`
+  }
+}
+
+fn obfuscate(code, opts) {
+  return new Obfuscator(opts).obfuscateJS(code)
+}
+
+fn obfuscateRuntime(code, opts) {
+  return new Obfuscator(opts).obfuscateNTLRuntime(code)
+}
+
+exports.Obfuscator        = Obfuscator
+exports.obfuscate         = obfuscate
+exports.obfuscateRuntime  = obfuscateRuntime
+exports.uid               = uid
+exports.hexEncode         = hexEncode
+exports.encodeNumber      = encodeNumber

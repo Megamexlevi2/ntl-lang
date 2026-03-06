@@ -1,18 +1,17 @@
 // Created by David Dev
 // GitHub: https://github.com/Megamexlevi2/ntl-lang
-// © David Dev 2026. All rights reserved.
 
 'use strict';
 const fs   = require('fs');
 const path = require('path');
-const { tokenize }      = require('./lexer');
-const { parse }         = require('./parser');
-const { CodeGen }       = require('./codegen');
-const { ScopeAnalyzer } = require('./scope');
-const { TypeInferer }   = require('./typeinfer');
-const { TreeShaker }    = require('./treeshaker');
+const { tokenize }      = require('./pipeline/lexer');
+const { parse }         = require('./pipeline/parser');
+const { CodeGen }       = require('./pipeline/codegen');
+const { ScopeAnalyzer } = require('./pipeline/scope');
+const { TypeInferer }   = require('./pipeline/typeinfer');
+const { TreeShaker }    = require('./pipeline/treeshaker');
 const { format: fmtErr } = require('./error');
-const { transformJSX, hasJSX } = require('./jsx-transform');
+const { transformJSX, hasJSX } = require('./transforms/jsx');
 
 const NTL_VERSION = '3.0.0';
 const TARGETS = {
@@ -44,7 +43,6 @@ class Compiler {
     filename = filename || '<unknown>';
     const lines = source.split('\n');
 
-    // ── JSX Transform (runs before NTL tokenization) ──────────────────────
     const autoJSX = opts.jsx || opts.jsxAuto !== false && hasJSX(source);
     if (autoJSX) {
       const jsxResult = transformJSX(source, {

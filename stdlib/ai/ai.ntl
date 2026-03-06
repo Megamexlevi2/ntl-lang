@@ -1,0 +1,456 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+
+fn _buildHeaders(contentType, contentLength, extra) {
+  val h = Object.assign({}, extra || {})
+  h["Content-Type"] = contentType || "application/json"
+  if (contentLength !== undefined) { h["Content-Length"] = contentLength }
+  return h
+}
+
+val nodeHttps = require("https")
+val nodeHttp  = require("http")
+val nodeUrl   = require("url")
+val nodeFs    = require("fs")
+
+fn _fetch(endpoint, body, headers, method) {
+  return new Promise((resolve, reject) => {
+    val parsed    = nodeUrl.parse(endpoint)
+    val isHttps   = parsed.protocol === "https:"
+    val transport = isHttps ? nodeHttps : nodeHttp
+    val data      = JSON.stringify(body)
+    val opts = {
+      hostname: parsed.hostname,
+      port:     parsed.port || (isHttps ? 443 : 80),
+      path:     parsed.path || "/",
+      method:   method || "POST",
+      headers:  _buildHeaders("application/json", Buffer.byteLength(data), headers || {})
+    }
+    val req = transport.request(opts, (res) => {
+      val chunks = []
+      res.on("data", c => chunks.push(c))
+      res.on("end", () => {
+        val rawStr = Buffer.concat(chunks).toString("utf8")
+        try { resolve({ status: res.statusCode, data: JSON.parse(rawStr), raw: rawStr }) }
+        catch (e) { resolve({ status: res.statusCode, data: rawStr, raw: rawStr }) }
+      })
+    })
+    req.on("error", reject)
+    req.write(data)
+    req.end()
+  })
+}
+
+fn _fetchStream(endpoint, body, headers, onChunk) {
+  return new Promise((resolve, reject) => {
+    val parsed    = nodeUrl.parse(endpoint)
+    val isHttps   = parsed.protocol === "https:"
+    val transport = isHttps ? nodeHttps : nodeHttp
+    val data      = JSON.stringify(body)
+    val opts = {
+      hostname: parsed.hostname,
+      port:     parsed.port || (isHttps ? 443 : 80),
+      path:     parsed.path || "/",
+      method:   "POST",
+      headers:  _buildHeaders("application/json", Buffer.byteLength(data), headers || {})
+    }
+    val req = transport.request(opts, (res) => {
+      var full = ""
+      res.on("data", chunk => {
+        val str   = chunk.toString("utf8")
+        val lines = str.split("\n")
+        each line in lines {
+          if (!line.startsWith("data:")) { continue }
+          val payload = line.slice(5).trim()
+          if (payload === "[DONE]") { continue }
+          try {
+            val obj   = JSON.parse(payload)
+            val token = obj.choices?.[0]?.delta?.content || obj.delta?.text || obj.message?.content || ""
+            if (token) { full += token; if (onChunk) { onChunk(token, full) } }
+          } catch (_) {}
+        }
+      })
+      res.on("end", () => resolve(full))
+    })
+    req.on("error", reject)
+    req.write(data)
+    req.end()
+  })
+}
+
+fn buildMessages(input, system) {
+  if (typeof input === "string") {
+    val msgs = []
+    if (system) { msgs.push({ role: "system", content: system }) }
+    msgs.push({ role: "user", content: input })
+    return msgs
+  }
+  if (Array.isArray(input)) { return input }
+  return [input]
+}
+
+class OpenAIProvider {
+  constructor(opts) {
+    this.apiKey  = opts.apiKey  || process.env.OPENAI_API_KEY  || ""
+    this.model   = opts.model   || "gpt-4o"
+    this.baseUrl = opts.baseUrl || "https://api.openai.com/v1"
+    this.org     = opts.org     || process.env.OPENAI_ORG      || ""
+  }
+
+  _headers() {
+    val h = {}
+    h["Authorization"] = "Bearer " + this.apiKey
+    if (this.org) { h["OpenAI-Organization"] = this.org }
+    return h
+  }
+
+  async chat(messages, opts) {
+    opts = opts || {}
+    val body = {
+      model:       opts.model       || this.model,
+      messages,
+      temperature: opts.temperature !== undefined ? opts.temperature : 0.7
+    }
+    if (opts.maxTokens)    { body.max_tokens  = opts.maxTokens }
+    if (opts.tools)        { body.tools       = opts.tools }
+    if (opts.stream && opts.onChunk) {
+      body.stream = true
+      return _fetchStream(this.baseUrl + "/chat/completions", body, this._headers(), opts.onChunk)
+    }
+    val res = await _fetch(this.baseUrl + "/chat/completions", body, this._headers())
+    if (res.status !== 200) { throw new Error(`ntl:ai - OpenAI error ${res.status}: ${JSON.stringify(res.data)}`) }
+    return {
+      content:      res.data.choices?.[0]?.message?.content || "",
+      role:         "assistant",
+      model:        res.data.model,
+      usage:        res.data.usage,
+      finishReason: res.data.choices?.[0]?.finish_reason,
+      raw:          res.data
+    }
+  }
+
+  async embed(input, opts) {
+    opts = opts || {}
+    val texts = Array.isArray(input) ? input : [input]
+    val body  = { model: opts.model || "text-embedding-3-small", input: texts }
+    val res   = await _fetch(this.baseUrl + "/embeddings", body, this._headers())
+    if (res.status !== 200) { throw new Error(`ntl:ai - OpenAI embed error: ${JSON.stringify(res.data)}`) }
+    return res.data.data.map(d => d.embedding)
+  }
+
+  async models() {
+    val res = await _fetch(this.baseUrl + "/models", {}, this._headers(), "GET")
+    return res.data.data || []
+  }
+}
+
+class AnthropicProvider {
+  constructor(opts) {
+    this.apiKey  = opts.apiKey  || process.env.ANTHROPIC_API_KEY || ""
+    this.model   = opts.model   || "claude-opus-4-6"
+    this.baseUrl = opts.baseUrl || "https://api.anthropic.com/v1"
+  }
+
+  _headers() {
+    val h = {}
+    h["x-api-key"] = this.apiKey
+    h["anthropic-version"] = "2023-06-01"
+    return h
+  }
+
+  async chat(messages, opts) {
+    opts = opts || {}
+    val sysMsg   = messages.find(m => m.role === "system")
+    val userMsgs = messages.filter(m => m.role !== "system")
+    val body = {
+      model:      opts.model     || this.model,
+      max_tokens: opts.maxTokens || 2048,
+      messages:   userMsgs
+    }
+    if (sysMsg)                    { body.system      = sysMsg.content }
+    if (opts.temperature !== undefined) { body.temperature = opts.temperature }
+    if (opts.tools)                { body.tools       = opts.tools }
+    if (opts.stream && opts.onChunk) {
+      body.stream = true
+      return _fetchStream(this.baseUrl + "/messages", body, this._headers(), opts.onChunk)
+    }
+    val res = await _fetch(this.baseUrl + "/messages", body, this._headers())
+    if (res.status !== 200) { throw new Error(`ntl:ai - Anthropic error ${res.status}: ${JSON.stringify(res.data)}`) }
+    val content = res.data.content?.map(c => c.text || "").join("") || ""
+    return {
+      content,
+      role:         "assistant",
+      model:        res.data.model,
+      usage:        res.data.usage,
+      finishReason: res.data.stop_reason,
+      raw:          res.data
+    }
+  }
+}
+
+class OllamaProvider {
+  constructor(opts) {
+    this.baseUrl = opts.baseUrl || process.env.OLLAMA_HOST || "http://localhost:11434"
+    this.model   = opts.model  || "llama3.1"
+  }
+
+  async chat(messages, opts) {
+    opts = opts || {}
+    val body = {
+      model:    opts.model || this.model,
+      messages,
+      stream:   false,
+      options:  { temperature: opts.temperature !== undefined ? opts.temperature : 0.7, num_predict: opts.maxTokens || 2048 }
+    }
+    if (opts.stream && opts.onChunk) {
+      body.stream = true
+      return _fetchStream(this.baseUrl + "/api/chat", body, {}, opts.onChunk)
+    }
+    val res = await _fetch(this.baseUrl + "/api/chat", body, {})
+    if (res.status !== 200) { throw new Error(`ntl:ai - Ollama error ${res.status}: ${JSON.stringify(res.data)}`) }
+    return { content: res.data.message?.content || "", role: "assistant", model: res.data.model, raw: res.data }
+  }
+
+  async embed(input, opts) {
+    opts = opts || {}
+    val texts   = Array.isArray(input) ? input : [input]
+    val results = []
+    each text in texts {
+      val body = { model: opts.model || this.model, prompt: text }
+      val res  = await _fetch(this.baseUrl + "/api/embeddings", body, {})
+      if (res.status !== 200) { throw new Error(`ntl:ai - Ollama embed error: ${JSON.stringify(res.data)}`) }
+      results.push(res.data.embedding || [])
+    }
+    return results
+  }
+
+  async models() {
+    val res = await _fetch(this.baseUrl + "/api/tags", {}, {}, "GET")
+    return (res.data.models || []).map(m => m.name)
+  }
+
+  async pull(model) {
+    return _fetch(this.baseUrl + "/api/pull", { name: model })
+  }
+}
+
+class GroqProvider {
+  constructor(opts) {
+    this.apiKey  = opts.apiKey || process.env.GROQ_API_KEY || ""
+    this.model   = opts.model  || "llama-3.3-70b-versatile"
+    this.baseUrl = "https://api.groq.com/openai/v1"
+  }
+
+  async chat(messages, opts) {
+    val openai = new OpenAIProvider({ apiKey: this.apiKey, model: this.model, baseUrl: this.baseUrl })
+    return openai.chat(messages, opts)
+  }
+}
+
+fn cosineSimilarity(a, b) {
+  var dot = 0
+  var na  = 0
+  var nb  = 0
+  var i   = 0
+  while (i < a.length) {
+    dot += a[i] * b[i]
+    na  += a[i] * a[i]
+    nb  += b[i] * b[i]
+    i++
+  }
+  return na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0
+}
+
+fn euclideanDistance(a, b) {
+  var sum = 0
+  var i   = 0
+  while (i < a.length) {
+    val d = a[i] - b[i]
+    sum  += d * d
+    i++
+  }
+  return Math.sqrt(sum)
+}
+
+class AI {
+  constructor(opts) {
+    opts          = opts || {}
+    this.provider = this._createProvider(opts)
+    this.system   = opts.system  || ""
+    this._memory  = []
+  }
+
+  _createProvider(opts) {
+    val name = (opts.provider || opts.backend || "openai").toLowerCase()
+    if (name === "openai")    { return new OpenAIProvider(opts) }
+    if (name === "anthropic" || name === "claude") { return new AnthropicProvider(opts) }
+    if (name === "ollama")    { return new OllamaProvider(opts) }
+    if (name === "groq")      { return new GroqProvider(opts) }
+    if (opts.apiKey && opts.apiKey.startsWith("sk-ant")) { return new AnthropicProvider(opts) }
+    if (opts.apiKey)          { return new OpenAIProvider(opts) }
+    if (process.env.ANTHROPIC_API_KEY) { return new AnthropicProvider(opts) }
+    if (process.env.OPENAI_API_KEY)    { return new OpenAIProvider(opts) }
+    if (process.env.GROQ_API_KEY)      { return new GroqProvider(opts) }
+    return new OllamaProvider(opts)
+  }
+
+  async ask(prompt, opts) {
+    opts = opts || {}
+    val messages  = buildMessages(prompt, this.system)
+    val response  = await this.provider.chat(messages, opts)
+    this._memory.push({ role: "user",      content: typeof prompt === "string" ? prompt : JSON.stringify(prompt) })
+    this._memory.push({ role: "assistant", content: response.content })
+    return response.content
+  }
+
+  async chat(messages, opts) {
+    return this.provider.chat(messages, opts)
+  }
+
+  async stream(prompt, onChunk, opts) {
+    val mergedOpts = Object.assign({}, opts, { stream: true, onChunk })
+    val messages   = buildMessages(prompt, this.system)
+    return this.provider.chat(messages, mergedOpts)
+  }
+
+  async converse(userMessage, opts) {
+    this._memory.push({ role: "user", content: userMessage })
+    val messages = []
+    if (this.system) { messages.push({ role: "system", content: this.system }) }
+    messages.push(...this._memory)
+    val response = await this.provider.chat(messages, opts || {})
+    this._memory.push({ role: "assistant", content: response.content })
+    return response.content
+  }
+
+  clearMemory() { this._memory = []; return this }
+
+  async embed(text, opts) {
+    if (this.provider.embed) { return this.provider.embed(text, opts || {}) }
+    throw new Error("ntl:ai - embed not supported by this provider")
+  }
+}
+
+class VectorStore {
+  constructor() {
+    this._docs       = []
+    this._embeddings = []
+  }
+
+  add(doc, embedding) {
+    doc.id = this._docs.length
+    this._docs.push(doc)
+    this._embeddings[doc.id] = embedding
+    return doc.id
+  }
+
+  async addWithEmbed(ai, doc) {
+    val [embedding] = await ai.embed(doc.text || doc.content || JSON.stringify(doc))
+    return this.add(doc, embedding)
+  }
+
+  search(queryEmbedding, k) {
+    return this._docs
+      .filter((_, i) => this._embeddings[i])
+      .map((doc, i) => { return { doc, score: cosineSimilarity(queryEmbedding, this._embeddings[doc.id] || []) } })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, k)
+  }
+
+  async retrieve(ai, query, k) {
+    val [queryEmb] = await ai.embed(query)
+    return this.search(queryEmb, k || 5)
+  }
+
+  size()  { return this._docs.length }
+  clear() { this._docs = []; this._embeddings = [] }
+
+  save(filePath) {
+    nodeFs.writeFileSync(filePath, JSON.stringify({ docs: this._docs, embeddings: this._embeddings }, null, 2), "utf-8")
+  }
+
+  load(filePath) {
+    val data         = JSON.parse(nodeFs.readFileSync(filePath, "utf-8"))
+    this._docs       = data.docs || []
+    this._embeddings = data.embeddings || []
+    return this
+  }
+}
+
+class Prompt {
+  constructor(template) { this._template = template }
+  format(vars) {
+    return this._template.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] !== undefined ? vars[k] : `{{${k}}}`)
+  }
+  static from(template) { return new Prompt(template) }
+}
+
+class Tensor {
+  constructor(data) {
+    if (Array.isArray(data)) {
+      this.data  = data.flat(Infinity).map(Number)
+      this.shape = Tensor._inferShape(data)
+    } else {
+      this.data  = []
+      this.shape = [0]
+    }
+  }
+
+  static _inferShape(arr) {
+    if (!Array.isArray(arr)) { return [] }
+    if (!Array.isArray(arr[0])) { return [arr.length] }
+    return [arr.length, ...Tensor._inferShape(arr[0])]
+  }
+
+  get length() { return this.data.length }
+
+  _op(o, cb) {
+    if (typeof o === "number") { return new Tensor(this.data.map(v => cb(v, o))) }
+    if (o instanceof Tensor)   { return new Tensor(this.data.map((v, i) => cb(v, o.data[i] || 0))) }
+    return this
+  }
+
+  add(o)    { return this._op(o, (a, b) => a + b) }
+  sub(o)    { return this._op(o, (a, b) => a - b) }
+  mul(o)    { return this._op(o, (a, b) => a * b) }
+  div(o)    { return this._op(o, (a, b) => a / b) }
+  dot(o)    { var s = 0; var i = 0; while (i < Math.min(this.data.length, o.data.length)) { s += this.data[i] * o.data[i]; i++ }; return s }
+  sum()     { return this.data.reduce((a, b) => a + b, 0) }
+  mean()    { return this.sum() / this.data.length }
+  max()     { return Math.max(...this.data) }
+  min()     { return Math.min(...this.data) }
+  norm()    { return Math.sqrt(this.dot(this)) }
+  normalize() { val n = this.norm(); return n ? new Tensor(this.data.map(v => v / n)) : this }
+  softmax()   { val m = this.max(); val e = this.data.map(v => Math.exp(v - m)); val s = e.reduce((a, b) => a + b, 0); return new Tensor(e.map(v => v / s)) }
+  relu()      { return new Tensor(this.data.map(v => Math.max(0, v))) }
+  sigmoid()   { return new Tensor(this.data.map(v => 1 / (1 + Math.exp(-v)))) }
+  tanh()      { return new Tensor(this.data.map(v => Math.tanh(v))) }
+  reshape(s)  { val t = new Tensor([]); t.data = [...this.data]; t.shape = s; return t }
+  toArray()   { return [...this.data] }
+  toString()  { return `Tensor([${this.data.slice(0, 8).join(",")}${this.data.length > 8 ? "..." : ""}], shape=[${this.shape}])` }
+}
+
+fn createAI(opts)    { return new AI(opts || {}) }
+fn openai(opts)      { opts = opts || {}; opts.provider = "openai";    return new AI(opts) }
+fn anthropic(opts)   { opts = opts || {}; opts.provider = "anthropic"; return new AI(opts) }
+fn claude(opts)      { return anthropic(opts) }
+fn ollama(opts)      { opts = opts || {}; opts.provider = "ollama";    return new AI(opts) }
+fn groq(opts)        { opts = opts || {}; opts.provider = "groq";      return new AI(opts) }
+
+exports.AI                 = AI
+exports.createAI           = createAI
+exports.openai             = openai
+exports.anthropic          = anthropic
+exports.claude             = claude
+exports.ollama             = ollama
+exports.groq               = groq
+exports.OpenAIProvider     = OpenAIProvider
+exports.AnthropicProvider  = AnthropicProvider
+exports.OllamaProvider     = OllamaProvider
+exports.GroqProvider       = GroqProvider
+exports.VectorStore        = VectorStore
+exports.Prompt             = Prompt
+exports.Tensor             = Tensor
+exports.cosineSimilarity   = cosineSimilarity
+exports.euclideanDistance  = euclideanDistance
+exports.buildMessages      = buildMessages

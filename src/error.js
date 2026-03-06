@@ -1,6 +1,5 @@
 // Created by David Dev
 // GitHub: https://github.com/Megamexlevi2/ntl-lang
-// © David Dev 2026. All rights reserved.
 
 'use strict';
 const USE_COLOR = process.stderr && process.stderr.isTTY !== false && !process.env.NO_COLOR;
@@ -128,16 +127,13 @@ function format(err, src) {
   const lines_ = [];
   lines_.push('');
 
-  // Header: "error[parse]: message"
   lines_.push(R.bold(R.red(label)) + R.bold(': ' + rawMsg));
 
-  // Location:  --> src/app.ntl:12:5
   if (file || line > 0) {
     const loc = [file, line > 0 ? String(line) : null, col > 1 ? String(col) : null].filter(Boolean).join(':');
     lines_.push(R.blue('  --> ') + loc);
   }
 
-  // Source snippet with arrows
   if (srcLines && line > 0) {
     lines_.push('');
     const underLabel = getUnderlineLabel(code, rawMsg, name);
@@ -145,14 +141,12 @@ function format(err, src) {
     if (view) lines_.push(view);
   }
 
-  // Explanation (only if it adds something new)
   const explanation = buildExplanation(code, name, rawMsg, phase);
   if (explanation && explanation !== rawMsg) {
     lines_.push('');
     lines_.push(R.blue('  = note: ') + R.gray(explanation.replace(/\n\s*/g, '  ')));
   }
 
-  // Suggestions
   if (sugs && sugs.length > 0) {
     lines_.push('');
     sugs.forEach((s, i) => {
@@ -161,14 +155,12 @@ function format(err, src) {
     });
   }
 
-  // Similar names
   if (similar && similar.length > 0) {
     lines_.push('');
     lines_.push(R.yellow('  note: ') + 'similar names in scope:');
     for (const s of similar) lines_.push('        ' + R.cyan(s));
   }
 
-  // Example (bad / good)
   if (exBad && exGood) {
     lines_.push('');
     lines_.push(R.red('  bad:  ') + R.dim(exBad));

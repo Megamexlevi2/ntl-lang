@@ -1,0 +1,247 @@
+class Keyframe {
+  constructor(time, value, easing) {
+    this.time    = time
+    this.value   = value
+    this.easing  = easing || null
+  }
+}
+
+class AnimationTrack {
+  constructor(property, target) {
+    this.property  = property
+    this.target    = target
+    this._keys     = []
+  }
+
+  addKey(time, value, easing) {
+    this._keys.push(new Keyframe(time, value, easing))
+    this._keys.sort((a, b) => a.time - b.time)
+    return this
+  }
+
+  evaluate(time) {
+    if (this._keys.length === 0) { return }
+    if (time <= this._keys[0].time) {
+      this._apply(this._keys[0].value)
+      return
+    }
+    val last = this._keys[this._keys.length - 1]
+    if (time >= last.time) {
+      this._apply(last.value)
+      return
+    }
+    var lo = 0
+    var hi = this._keys.length - 1
+    while (hi - lo > 1) {
+      val mid = (lo + hi) >> 1
+      if (this._keys[mid].time <= time) { lo = mid }
+      else { hi = mid }
+    }
+    val ka  = this._keys[lo]
+    val kb  = this._keys[hi]
+    var t   = (time - ka.time) / (kb.time - ka.time)
+    if (ka.easing) { t = ka.easing(t) }
+    else { t = t * t * (3 - 2 * t) }
+    if (typeof ka.value === 'number') {
+      this._apply(ka.value + (kb.value - ka.value) * t)
+    } else {
+      this._apply(ka.value)
+    }
+  }
+
+  _apply(value) {
+    val parts = this.property.split('.')
+    var obj   = this.target
+    var i     = 0
+    while (i < parts.length - 1) { obj = obj[parts[i]]; i++ }
+    if (obj) { obj[parts[parts.length - 1]] = value }
+  }
+
+  duration() {
+    if (this._keys.length === 0) { return 0 }
+    return this._keys[this._keys.length - 1].time
+  }
+}
+
+class AnimationClip {
+  constructor(name, opts) {
+    opts         = opts || {}
+    this.name    = name || 'clip'
+    this._tracks = []
+    this.loop    = opts.loop     !== false
+    this.speed   = opts.speed    || 1.0
+    this._time   = 0
+    this._playing= false
+    this._done   = false
+    this._onDone = null
+    this._target = opts.target   || null
+  }
+
+  addTrack(property, target) {
+    val tk = new AnimationTrack(property, target || this._target)
+    this._tracks.push(tk)
+    return tk
+  }
+
+  duration() {
+    var maxD = 0
+    each tk in this._tracks {
+      val d = tk.duration()
+      if (d > maxD) { maxD = d }
+    }
+    return maxD
+  }
+
+  play()  { this._playing = true;  this._done = false; return this }
+  pause() { this._playing = false; return this }
+  stop()  { this._playing = false; this._time = 0; return this }
+  reset() { this._time = 0; this._done = false; return this }
+
+  seekTo(t) { this._time = t; return this }
+
+  onDone(handler) { this._onDone = handler; return this }
+
+  update(dt) {
+    if (!this._playing) { return }
+    this._time += dt * this.speed
+    val dur = this.duration()
+    if (dur > 0 && this._time >= dur) {
+      if (this.loop) {
+        this._time = this._time % dur
+      } else {
+        this._time  = dur
+        this._playing = false
+        this._done    = true
+        if (this._onDone) { this._onDone(this) }
+      }
+    }
+    each tk in this._tracks { tk.evaluate(this._time) }
+  }
+
+  isDone()    { return this._done }
+  isPlaying() { return this._playing }
+  getTime()   { return this._time }
+}
+
+class Animator {
+  constructor(target) {
+    this._target  = target
+    this._clips   = new Map()
+    this._current = null
+    this._queue   = []
+  }
+
+  addClip(clip) {
+    this._clips.set(clip.name, clip)
+    return this
+  }
+
+  createClip(name, opts) {
+    val clip = new AnimationClip(name, Object.assign({ target: this._target }, opts || {}))
+    this._clips.set(name, clip)
+    return clip
+  }
+
+  play(name, opts) {
+    opts = opts || {}
+    val clip = this._clips.get(name)
+    if (!clip) { return this }
+    if (this._current && this._current !== clip) {
+      this._current.stop()
+    }
+    this._current = clip
+    if (opts.loop !== undefined) { clip.loop = opts.loop }
+    if (opts.speed !== undefined) { clip.speed = opts.speed }
+    clip.reset()
+    clip.play()
+    return this
+  }
+
+  stop() {
+    if (this._current) { this._current.stop(); this._current = null }
+    return this
+  }
+
+  update(dt) {
+    if (this._current) { this._current.update(dt) }
+  }
+
+  currentClip() { return this._current }
+  isPlaying(name) { return this._current && this._current.name === name && this._current.isPlaying() }
+}
+
+class AnimationStateMachine {
+  constructor(animator) {
+    this._animator  = animator
+    this._states    = new Map()
+    this._current   = null
+    this._transitions = []
+    this._params    = {}
+  }
+
+  addState(name, clipName, opts) {
+    this._states.set(name, { name, clipName, opts: opts || {} })
+    return this
+  }
+
+  addTransition(fromState, toState, condition) {
+    this._transitions.push({ from: fromState, to: toState, condition })
+    return this
+  }
+
+  setParam(key, value) {
+    this._params[key] = value
+    return this
+  }
+
+  setInitial(initState) {
+    this._current = initState
+    val s = this._states.get(initState)
+    if (s) { this._animator.play(s.clipName, s.opts) }
+    return this
+  }
+
+  update(dt) {
+    each tr in this._transitions {
+      if (tr.from === this._current || tr.from === '*') {
+        val shouldTransition = tr.condition(this._params)
+        if (shouldTransition) {
+          this._current = tr.to
+          val s = this._states.get(tr.to)
+          if (s) { this._animator.play(s.clipName, s.opts) }
+          break
+        }
+      }
+    }
+    this._animator.update(dt)
+  }
+
+  current() { return this._current }
+}
+
+fn rotateBob(node, opts) {
+  opts = opts || {}
+  val clip = new AnimationClip('bob', { target: node, loop: true })
+  val bobH   = opts.height || 0.3
+  val rotSpd = opts.rotSpeed || 1.0
+  val dur    = opts.duration || 2.0
+  val baseY  = node.transform ? node.transform.position.y : 0
+  val bobT   = clip.addTrack('transform.position.y')
+  var t = 0
+  while (t <= dur) {
+    bobT.addKey(t, baseY + Math.sin(t / dur * Math.PI * 2) * bobH)
+    t += dur / 8
+  }
+  val rotT = clip.addTrack('transform.rotation.y')
+  rotT.addKey(0, 0)
+  rotT.addKey(dur, Math.PI * 2 * rotSpd)
+  clip.play()
+  return clip
+}
+
+exports.Keyframe             = Keyframe
+exports.AnimationTrack       = AnimationTrack
+exports.AnimationClip        = AnimationClip
+exports.Animator             = Animator
+exports.AnimationStateMachine= AnimationStateMachine
+exports.rotateBob            = rotateBob

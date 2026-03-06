@@ -1,0 +1,284 @@
+val fs      = require('fs')
+val path    = require('path')
+val os      = require('os')
+val child   = require('child_process')
+
+val HALF_UP   = '\u2580'
+val HALF_DOWN = '\u2584'
+
+val DEFAULT_WIDTH  = 1280
+val DEFAULT_HEIGHT = 720
+val MAX_WIDTH      = 2560
+val MAX_HEIGHT     = 1440
+
+fn clampRes(w, h) {
+  val rw = Math.min(Math.max(w || DEFAULT_WIDTH,  1), MAX_WIDTH)
+  val rh = Math.min(Math.max(h || DEFAULT_HEIGHT, 1), MAX_HEIGHT)
+  return { width: rw, height: rh }
+}
+
+class FramebufferDisplay {
+  constructor(width, height) {
+    val res       = clampRes(width, height)
+    this.width    = res.width
+    this.height   = res.height
+    this.fbPath   = '/dev/fb0'
+    this._fbFd    = null
+    this._stride  = this.width * 4
+    this._fbSize  = this.width * this.height * 4
+    this._buf     = Buffer.allocUnsafe(this._fbSize)
+    this._ready   = false
+    this._info    = { width: this.width, height: this.height, bpp: 32 }
+  }
+  open() {
+    try {
+      this._fbFd = fs.openSync(this.fbPath, 'r+')
+      this._ready = true
+      this._readScreenInfo()
+    } catch (e) {
+      this._ready = false
+    }
+    return this._ready
+  }
+  _readScreenInfo() {
+    try {
+      val infoPath = '/sys/class/graphics/fb0/virtual_size'
+      if (fs.existsSync(infoPath)) {
+        val parts = fs.readFileSync(infoPath, 'utf8').trim().split(',')
+        if (parts.length >= 2) {
+          this._info.width  = parseInt(parts[0])
+          this._info.height = parseInt(parts[1])
+        }
+      }
+    } catch (_) {}
+  }
+  present(framebuffer) {
+    if (!this._ready) { return false }
+    val src = framebuffer
+    val dst = this._buf
+    var i = 0
+    val len = Math.min(src.length, dst.length) >> 2
+    while (i < len) {
+      val si = i * 4
+      dst[si]   = src[si + 2]
+      dst[si+1] = src[si + 1]
+      dst[si+2] = src[si]
+      dst[si+3] = src[si + 3]
+      i++
+    }
+    try {
+      fs.writeSync(this._fbFd, dst, 0, dst.length, 0)
+      return true
+    } catch (_) {
+      return false
+    }
+  }
+  close() {
+    if (this._fbFd !== null) {
+      try { fs.closeSync(this._fbFd) } catch (_) {}
+      this._fbFd = null
+      this._ready = false
+    }
+  }
+}
+
+class TerminalDisplay {
+  constructor(width, height) {
+    val res2           = clampRes(width, height)
+    this.renderWidth  = res2.width
+    this.renderHeight = res2.height
+    this._termCols    = 0
+    this._termRows    = 0
+    this._lastFrame   = null
+    this._frameCount  = 0
+    this._fpsTime     = Date.now()
+    this._fps         = 0
+    this._initialized = false
+  }
+  open() {
+    this._updateSize()
+    process.stdout.write('\x1b[?25l')
+    process.stdout.write('\x1b[2J')
+    process.stdout.write('\x1b[H')
+    this._initialized = true
+    process.on('SIGWINCH', () => { this._updateSize() })
+    process.on('exit', () => { this.close() })
+    process.on('SIGINT', () => { this.close(); process.exit(0) })
+    return true
+  }
+  _updateSize() {
+    var cols = 80
+    var rows = 24
+    try {
+      val sz = process.stdout.getWindowSize()
+      cols = sz[0]
+      rows = sz[1]
+    } catch (_) {
+      try {
+        cols = parseInt(process.env.COLUMNS || '80')
+        rows = parseInt(process.env.LINES   || '24')
+      } catch (_) {}
+    }
+    this._termCols = cols
+    this._termRows = rows - 2
+  }
+  present(framebuffer) {
+    if (!this._initialized) { return false }
+    val cols = this._termCols
+    val rows = this._termRows
+    if (cols < 4 || rows < 2) { return false }
+    val srcW  = this.renderWidth
+    val srcH  = this.renderHeight
+    val scaleX = srcW / cols
+    val scaleY = srcH / (rows * 2)
+    val out   = ['\x1b[H']
+    var row = 0
+    while (row < rows) {
+      var col = 0
+      while (col < cols) {
+        val topY    = Math.floor(row * 2 * scaleY)
+        val botY    = Math.floor((row * 2 + 1) * scaleY)
+        val sampleX = Math.floor(col * scaleX)
+        val topIdx  = (Math.min(topY, srcH - 1) * srcW + Math.min(sampleX, srcW - 1)) * 4
+        val botIdx  = (Math.min(botY, srcH - 1) * srcW + Math.min(sampleX, srcW - 1)) * 4
+        val tr = framebuffer[topIdx],   tg = framebuffer[topIdx+1], tb = framebuffer[topIdx+2]
+        val br = framebuffer[botIdx],   bg = framebuffer[botIdx+1], bb = framebuffer[botIdx+2]
+        out.push(`\x1b[38;2;${tr};${tg};${tb}m\x1b[48;2;${br};${bg};${bb}m${HALF_UP}`)
+        col++
+      }
+      out.push('\x1b[0m\n')
+      row++
+    }
+    this._frameCount++
+    val now = Date.now()
+    if (now - this._fpsTime >= 1000) {
+      this._fps = this._frameCount
+      this._frameCount = 0
+      this._fpsTime = now
+    }
+    out.push(`\x1b[0m\x1b[38;2;200;200;50m NTL:Game ${this.renderWidth}x${this.renderHeight} | ${this._fps} FPS | CPU Renderer \x1b[0m`)
+    process.stdout.write(out.join(''))
+    return true
+  }
+  close() {
+    process.stdout.write('\x1b[0m\x1b[?25h\x1b[2J\x1b[H')
+    this._initialized = false
+  }
+}
+
+class FileDisplay {
+  constructor(width, height, opts) {
+    opts           = opts || {}
+    val res3       = clampRes(width, height)
+    this.width     = res3.width
+    this.height    = res3.height
+    this.outDir    = opts.outDir  || path.join(os.tmpdir(), 'ntl_game')
+    this.format    = opts.format  || 'bmp'
+    this.autoOpen  = opts.autoOpen !== false
+    this._frame    = 0
+    this._lastPath = null
+    this._proc     = null
+  }
+  open() {
+    try {
+      if (!fs.existsSync(this.outDir)) {
+        fs.mkdirSync(this.outDir, { recursive: true })
+      }
+      return true
+    } catch (_) { return false }
+  }
+  present(framebuffer) {
+    val fname = path.join(this.outDir, `frame.bmp`)
+    val bmp = this._makeBMP(framebuffer, this.width, this.height)
+    try {
+      fs.writeFileSync(fname, bmp)
+      this._lastPath = fname
+      if (this._frame === 0 && this.autoOpen) {
+        this._openViewer(fname)
+      }
+      this._frame++
+      return true
+    } catch (_) { return false }
+  }
+  _makeBMP(data, w, h) {
+    val pixelDataSize = w * h * 3
+    val paddingPerRow = (4 - (w * 3) % 4) % 4
+    val rowSize = w * 3 + paddingPerRow
+    val totalSize = 54 + rowSize * h
+    val buf = Buffer.allocUnsafe(totalSize)
+    buf.write('BM', 0, 'ascii')
+    buf.writeUInt32LE(totalSize, 2)
+    buf.writeUInt32LE(0, 6)
+    buf.writeUInt32LE(54, 10)
+    buf.writeUInt32LE(40, 14)
+    buf.writeInt32LE(w, 18)
+    buf.writeInt32LE(-h, 22)
+    buf.writeUInt16LE(1, 26)
+    buf.writeUInt16LE(24, 28)
+    buf.writeUInt32LE(0, 30)
+    buf.writeUInt32LE(rowSize * h, 34)
+    buf.writeInt32LE(2835, 38)
+    buf.writeInt32LE(2835, 42)
+    buf.writeUInt32LE(0, 46)
+    buf.writeUInt32LE(0, 50)
+    var y = 0
+    while (y < h) {
+      var x = 0
+      while (x < w) {
+        val si  = (y * w + x) * 4
+        val off = 54 + y * rowSize + x * 3
+        buf[off]   = data[si + 2]
+        buf[off+1] = data[si + 1]
+        buf[off+2] = data[si]
+        x++
+      }
+      var p = 0
+      while (p < paddingPerRow) { buf[54 + y * rowSize + w * 3 + p] = 0; p++ }
+      y++
+    }
+    return buf
+  }
+  _openViewer(fpath) {
+    val viewers = ['xdg-open', 'eog', 'display', 'shotwell', 'feh', 'open']
+    var i = 0
+    while (i < viewers.length) {
+      try {
+        child.spawn(viewers[i], [fpath], { detached: true, stdio: 'ignore' }).unref()
+        return
+      } catch (_) {}
+      i++
+    }
+  }
+  close() {}
+}
+
+fn createDisplay(width, height, opts) {
+  opts = opts || {}
+  val mode = opts.mode || 'auto'
+  if (mode === 'framebuffer') {
+    val d = new FramebufferDisplay(width, height)
+    if (d.open()) { return d }
+  }
+  if (mode === 'terminal' || mode === 'auto') {
+    if (process.env.TERM || process.env.COLORTERM) {
+      val d = new TerminalDisplay(width, height)
+      d.open()
+      return d
+    }
+  }
+  if (mode === 'file' || mode === 'auto') {
+    val d = new FileDisplay(width, height, opts)
+    d.open()
+    return d
+  }
+  val fb = new FramebufferDisplay(width, height)
+  if (fb.open()) { return fb }
+  val term = new TerminalDisplay(width, height)
+  term.open()
+  return term
+}
+
+exports.FramebufferDisplay = FramebufferDisplay
+exports.TerminalDisplay    = TerminalDisplay
+exports.FileDisplay        = FileDisplay
+exports.createDisplay      = createDisplay

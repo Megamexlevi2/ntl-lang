@@ -1,0 +1,302 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+// (c) David Dev 2026. All rights reserved.
+
+*// ntl:utils — everyday helpers for strings, arrays, objects, math, timing
+*// import it: import { slugify, debounce, groupBy } from "ntl:utils"
+
+*// ─── String Utilities ─────────────────────────────────────────────────
+
+*// slugify("Hello World!") → "hello-world"
+fn slugify(str) {
+  return String(str).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+}
+
+*// camelToSnake("myVariableName") → "my_variable_name"
+fn camelToSnake(str) {
+  return String(str).replace(/([A-Z])/g, "_$1").toLowerCase()
+}
+
+*// snakeToCamel("my_variable_name") → "myVariableName"
+fn snakeToCamel(str) {
+  return String(str).replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+}
+
+*// capitalize("hello world") → "Hello world"
+fn capitalize(str) {
+  val s = String(str)
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+*// titleCase("hello world") → "Hello World"
+fn titleCase(str) {
+  return String(str).replace(/\b\w/g, c => c.toUpperCase())
+}
+
+*// truncate("a very long string", 10) → "a very lon..."
+fn truncate(str, max, suffix) {
+  val s = String(str)
+  val end = suffix !== undefined ? suffix : "..."
+  return s.length > max ? s.slice(0, max - end.length) + end : s
+}
+
+*// pad("5", 3, "0") → "005"
+fn pad(str, len, char) {
+  return String(str).padStart(len || 2, char || "0")
+}
+
+*// template("Hello {name}!", { name: "David" }) → "Hello David!"
+fn template(str, data) {
+  return String(str).replace(/\{(\w+)\}/g, (_, k) => data[k] !== undefined ? data[k] : _)
+}
+
+*// escapeHtml("<script>") → "&lt;script&gt;"
+fn escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;")
+}
+
+*// stripHtml("<b>Hello</b>") → "Hello"
+fn stripHtml(str) {
+  return String(str).replace(/<[^>]*>/g, "")
+}
+
+*// repeat("ab", 3) → "ababab"
+fn repeat(str, n) {
+  return String(str).repeat(n || 1)
+}
+
+*// ─── Number Utilities ─────────────────────────────────────────────────
+
+*// clamp(150, 0, 100) → 100  (keep a number within min/max bounds)
+fn clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
+*// round(3.14159, 2) → 3.14
+fn round(n, decimals) {
+  val factor = Math.pow(10, decimals || 0)
+  return Math.round(n * factor) / factor
+}
+
+*// lerp(0, 100, 0.5) → 50  (linear interpolation between two values)
+fn lerp(a, b, t) {
+  return a + (b - a) * t
+}
+
+*// formatBytes(1048576) → "1.00 MB"
+fn formatBytes(bytes) {
+  if (bytes < 1024) { return bytes + "B" }
+  if (bytes < 1024 * 1024) { return (bytes / 1024).toFixed(1) + "KB" }
+  return (bytes / 1024 / 1024).toFixed(2) + "MB"
+}
+
+*// formatMs(3700) → "3.70s"
+fn formatMs(ms) {
+  if (ms < 1000) { return ms + "ms" }
+  return (ms / 1000).toFixed(2) + "s"
+}
+
+*// ─── Array Utilities ──────────────────────────────────────────────────
+
+*// chunk([1,2,3,4,5], 2) → [[1,2],[3,4],[5]]
+fn chunk(arr, size) {
+  val result = []
+  var i = 0
+  while (i < arr.length) {
+    result.push(arr.slice(i, i + size))
+    i += size
+  }
+  return result
+}
+
+*// unique([1,2,2,3,1]) → [1,2,3]
+fn unique(arr) {
+  return [...new Set(arr)]
+}
+
+*// flatten([[1,2],[3,[4]]]) → [1,2,3,4]  (deep flatten)
+fn flatten(arr) {
+  return arr.flat(Infinity)
+}
+
+*// groupBy([{type:"a"},{type:"b"},{type:"a"}], "type") → {a:[...], b:[...]}
+fn groupBy(arr, key) {
+  return arr.reduce((acc, item) => {
+    val k = typeof key === "function" ? key(item) : item[key]
+    if (!acc[k]) { acc[k] = [] }
+    acc[k].push(item)
+    return acc
+  }, {})
+}
+
+*// shuffle([1,2,3,4,5]) → [3,1,5,2,4] (random order, doesn't mutate)
+fn shuffle(arr) {
+  val a = arr.slice()
+  var i = a.length
+  while (i > 0) {
+    val j = Math.floor(Math.random() * i--)
+    val tmp = a[i]; a[i] = a[j]; a[j] = tmp
+  }
+  return a
+}
+
+*// sample([1,2,3,4,5], 2) → [4,2] (pick N random items)
+fn sample(arr, n) {
+  return shuffle(arr).slice(0, n || 1)
+}
+
+*// zip([1,2,3], ["a","b","c"]) → [[1,"a"],[2,"b"],[3,"c"]]
+fn zip(...arrays) {
+  val len = Math.min(...arrays.map(a => a.length))
+  return Array.from({ length: len }, (_, i) => arrays.map(a => a[i]))
+}
+
+*// ─── Object Utilities ─────────────────────────────────────────────────
+
+*// pick({a:1, b:2, c:3}, ["a","c"]) → {a:1, c:3}
+fn pick(obj, keys) {
+  val result = {}
+  for val k of keys { if (k in obj) result[k] = obj[k] }
+  return result
+}
+
+*// omit({a:1, b:2, c:3}, ["b"]) → {a:1, c:3}
+fn omit(obj, keys) {
+  val result = Object.assign({}, obj)
+  for val k of keys { delete result[k] }
+  return result
+}
+
+*// deepMerge({a:1}, {b:2, a:99}) → {a:99, b:2}
+fn deepMerge(target, ...sources) {
+  for val src of sources {
+    for val k of Object.keys(src) {
+      if (src[k] && typeof src[k] === "object" && !Array.isArray(src[k])) {
+        if (!target[k] || typeof target[k] !== "object") { target[k] = {} }
+        deepMerge(target[k], src[k])
+      } else {
+        target[k] = src[k]
+      }
+    }
+  }
+  return target
+}
+
+*// flatten an object: { a: { b: 1 } } → { "a.b": 1 }
+fn flattenObject(obj, prefix) {
+  val p = prefix || ""
+  return Object.keys(obj).reduce((acc, k) => {
+    val key = p ? p + "." + k : k
+    if (obj[k] && typeof obj[k] === "object" && !Array.isArray(obj[k])) {
+      Object.assign(acc, flattenObject(obj[k], key))
+    } else {
+      acc[key] = obj[k]
+    }
+    return acc
+  }, {})
+}
+
+*// ─── Timing / Control Flow ────────────────────────────────────────────
+
+*// sleep(1000) → wait 1 second  (use with await)
+fn sleep(ms) {
+  return new Promise(r => setTimeout(r, ms || 0))
+}
+
+*// debounce(fn, 300) → only fires 300ms after the LAST call
+fn debounce(fn2, ms) {
+  var timer = null
+  return function(...args) {
+    clearTimeout(timer)
+    timer = setTimeout(() => fn2.apply(this, args), ms || 300)
+  }
+}
+
+*// throttle(fn, 100) → fires at most once every 100ms
+fn throttle(fn2, ms) {
+  var last = 0
+  return function(...args) {
+    val now = Date.now()
+    if (now - last >= (ms || 100)) {
+      last = now
+      return fn2.apply(this, args)
+    }
+  }
+}
+
+*// retry(fetchData, 3) → try up to 3 times before giving up
+async fn retry(fn2, times, delay) {
+  var err
+  var i = 0
+  while (i < (times || 3)) {
+    try { return await fn2() }
+    catch (e) { err = e; if (delay) { await sleep(delay) } }
+    i++
+  }
+  raise err
+}
+
+*// memoize(expensiveFn) → caches results per argument
+fn memoize(fn2) {
+  val cache = new Map()
+  return function(...args) {
+    val key = JSON.stringify(args)
+    if (cache.has(key)) { return cache.get(key) }
+    val result = fn2.apply(this, args)
+    cache.set(key, result)
+    return result
+  }
+}
+
+*// ─── Validation Helpers ───────────────────────────────────────────────
+
+fn isValidIdentifier(name) {
+  return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name)
+}
+
+fn isEmail(str) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(str))
+}
+
+fn isUrl(str) {
+  try { new URL(str); return true } catch (_) { return false }
+}
+
+fn levenshtein(a, b) {
+  val m = a.length
+  val n = b.length
+  if (m === 0) { return n }
+  if (n === 0) { return m }
+  val dp = Array.from({ length: m + 1 }, (_, i) => [i])
+  var j = 0
+  while (j <= n) { dp[0][j] = j; j++ }
+  var i = 1
+  while (i <= m) {
+    var k = 1
+    while (k <= n) {
+      if (a[i - 1] === b[k - 1]) {
+        dp[i][k] = dp[i - 1][k - 1]
+      } else {
+        dp[i][k] = 1 + Math.min(dp[i - 1][k], dp[i][k - 1], dp[i - 1][k - 1])
+      }
+      k++
+    }
+    i++
+  }
+  return dp[m][n]
+}
+
+export {
+  slugify, camelToSnake, snakeToCamel, capitalize, titleCase,
+  truncate, pad, template, escapeHtml, stripHtml, repeat,
+  clamp, round, lerp, formatBytes, formatMs,
+  chunk, unique, flatten, groupBy, shuffle, sample, zip,
+  pick, omit, deepMerge, flattenObject,
+  sleep, debounce, throttle, retry, memoize,
+  isValidIdentifier, isEmail, isUrl, levenshtein
+}

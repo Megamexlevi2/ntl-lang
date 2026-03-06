@@ -1,0 +1,102 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+// (c) David Dev 2026. All rights reserved.
+
+*// ntl:cache — in-memory key-value cache with TTL, tags, and getOrSet
+*// import it: val { Cache } = require("ntl:cache")
+
+class Cache {
+  init(opts) {
+    val o = opts || {}
+    this._store      = new Map()           *// key → { value, expires }
+    this._maxSize    = o.maxSize || 1000   *// LRU eviction when full
+    this._defaultTTL = o.ttl || 0          *// 0 = no expiry
+
+    *// Start background purge timer if a default TTL is set
+    if (this._defaultTTL > 0) {
+      this._timer = setInterval(() => { this._purge() }, this._defaultTTL)
+      if (this._timer.unref) { this._timer.unref() }
+    }
+  }
+
+  *// destroy() — stop the background timer (call when done in tests)
+  destroy() {
+    if (this._timer) { clearInterval(this._timer); this._timer = null }
+  }
+
+  *// set("key", value) or set("key", value, { ttl: 5000 })
+  set(key, value, opts) {
+    val o = opts || {}
+    val ttl = o.ttl !== undefined ? o.ttl : this._defaultTTL
+    val expires = ttl > 0 ? Date.now() + ttl : null
+    val tags = o.tags || []
+    if (this._store.size >= this._maxSize) {
+      val firstKey = this._store.keys().next().value
+      this._store.delete(firstKey)
+    }
+    this._store.set(String(key), { value, expires, tags })
+    return this
+  }
+
+  *// get("key") → value or null (null if expired or missing)
+  get(key) {
+    val entry = this._store.get(String(key))
+    if (!entry) { return null }
+    if (entry.expires && Date.now() > entry.expires) {
+      this._store.delete(String(key))
+      return null
+    }
+    return entry.value
+  }
+
+  *// has("key") → true if key exists and hasn't expired
+  has(key) {
+    return this.get(key) !== null
+  }
+
+  *// delete("key")
+  delete(key) {
+    return this._store.delete(String(key))
+  }
+
+  *// getOrSet("key", async () => fetch()) → cached or computed value
+  async getOrSet(key, fn2, opts) {
+    val cached = this.get(key)
+    if (cached !== null) { return cached }
+    val value = await fn2()
+    this.set(key, value, opts)
+    return value
+  }
+
+  *// invalidateTag("users") → remove all entries tagged with "users"
+  invalidateTag(tag) {
+    var count = 0
+    val toDelete = []
+    for val entry of this._store {
+      val k = entry[0]
+      val v = entry[1]
+      if (v.tags && v.tags.includes(tag)) { toDelete.push(k) }
+    }
+    for val k of toDelete { this._store.delete(k); count++ }
+    return count
+  }
+
+  *// clear() → empty the entire cache
+  clear() { this._store.clear(); return this }
+
+  *// size → number of stored (possibly expired) entries
+  get size() { return this._store.size }
+
+  _purge() {
+    val now = Date.now()
+    val toDelete = []
+    for val entry of this._store {
+      val k = entry[0]
+      val v = entry[1]
+      if (v.expires && now > v.expires) { toDelete.push(k) }
+    }
+    for val k of toDelete { this._store.delete(k) }
+  }
+}
+
+export { Cache }

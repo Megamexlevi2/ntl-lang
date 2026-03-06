@@ -1,0 +1,177 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+// (c) David Dev 2026. All rights reserved.
+
+*// ntl:fs — filesystem without requiring 'fs' module manually
+*// import it: val fs = require("ntl:fs")
+*//
+*// fs.write("file.txt", "hello")  → write file
+*// fs.read("file.txt")            → "hello"
+*// fs.exists("file.txt")          → true
+*// fs.remove("file.txt")          → delete file
+*// fs.readJson("data.json")       → parsed object
+
+val _b      = process.binding("fs")
+val _consts = require("constants")
+val _path   = require("path")
+val _nodeFs = require("fs")
+
+val _O_RD    = _consts.O_RDONLY
+val _O_WR    = _consts.O_WRONLY
+val _O_CR    = _consts.O_CREAT
+val _O_TR    = _consts.O_TRUNC
+val _O_AP    = _consts.O_APPEND
+val _WR_FLAG = _O_WR | _O_CR | _O_TR
+val _AP_FLAG = _O_WR | _O_CR | _O_AP
+
+*// ─── Read / Write ─────────────────────────────────────────────────────
+
+*// read("file.txt") → string content
+fn read(filePath) {
+  return _b.readFileUtf8(String(filePath), _O_RD)
+}
+
+*// readBuf("file.bin") → Buffer
+fn readBuf(filePath) {
+  val txt = _b.readFileUtf8(String(filePath), _O_RD)
+  return Buffer.from(txt, "utf8")
+}
+
+*// write("file.txt", "hello") → creates or overwrites
+fn write(filePath, data) {
+  val p = String(filePath)
+  _b.writeFileUtf8(p, String(data == null ? "" : data), _WR_FLAG, 0o644)
+}
+
+*// append("log.txt", "new line\n") → appends to existing file
+fn append(filePath, data) {
+  val p = String(filePath)
+  _b.writeFileUtf8(p, String(data == null ? "" : data), _AP_FLAG, 0o644)
+}
+
+*// ─── JSON Helpers ─────────────────────────────────────────────────────
+
+*// readJson("config.json") → parsed JavaScript object
+fn readJson(filePath) {
+  return JSON.parse(_b.readFileUtf8(String(filePath), _O_RD))
+}
+
+*// writeJson("config.json", { port: 3000 }) → pretty-printed JSON file
+fn writeJson(filePath, obj, indent) {
+  val data = JSON.stringify(obj, null, indent !== undefined ? indent : 2)
+  _b.writeFileUtf8(String(filePath), data, _WR_FLAG, 0o644)
+}
+
+*// ─── File Checks ──────────────────────────────────────────────────────
+
+*// exists("file.txt") → true or false
+fn exists(filePath) {
+  try {
+    _nodeFs.accessSync(String(filePath))
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+*// isFile("path") → true if it's a regular file
+fn isFile(filePath) {
+  try {
+    return _nodeFs.statSync(String(filePath)).isFile()
+  } catch (e) {
+    return false
+  }
+}
+
+*// isDir("path") → true if it's a directory
+fn isDir(dirPath) {
+  try {
+    return _nodeFs.statSync(String(dirPath)).isDirectory()
+  } catch (e) {
+    return false
+  }
+}
+
+*// stat("file.txt") → { size, mtime, ctime, isFile, isDir }
+fn stat(filePath) {
+  val s = _nodeFs.statSync(String(filePath))
+  return { size: s.size, mtime: s.mtimeMs, ctime: s.ctimeMs, isFile: s.isFile(), isDir: s.isDirectory() }
+}
+
+*// ─── Directory Operations ─────────────────────────────────────────────
+
+*// mkdir("path/to/dir") → create directory (and parents)
+fn mkdir(dirPath) {
+  _nodeFs.mkdirSync(String(dirPath), { recursive: true })
+}
+
+*// list("dir") → array of filenames in that directory
+fn list(dirPath) {
+  return _nodeFs.readdirSync(String(dirPath))
+}
+
+*// listFull("dir") → array of full paths
+fn listFull(dirPath) {
+  val d = String(dirPath)
+  return _nodeFs.readdirSync(d).map(f => _path.join(d, f))
+}
+
+*// remove("file.txt") → delete a file
+fn remove(filePath) {
+  _nodeFs.unlinkSync(String(filePath))
+}
+
+*// rmdir("dir") → delete a directory (recursively)
+fn rmdir(dirPath) {
+  _nodeFs.rmSync(String(dirPath), { recursive: true, force: true })
+}
+
+*// copy("src.txt", "dst.txt") → copy a file
+fn copy(src, dst) {
+  _nodeFs.copyFileSync(String(src), String(dst))
+}
+
+*// move("src.txt", "dst.txt") → rename/move a file
+fn move(src, dst) {
+  _nodeFs.renameSync(String(src), String(dst))
+}
+
+*// ─── Path Utilities ───────────────────────────────────────────────────
+
+*// join("a", "b", "c.txt") → "a/b/c.txt"
+fn join(...parts) {
+  return _path.join(...parts)
+}
+
+*// resolve("./foo") → absolute path
+fn resolve(...parts) {
+  return _path.resolve(...parts)
+}
+
+*// basename("/a/b/c.txt") → "c.txt"
+fn basename(filePath, ext) {
+  return _path.basename(String(filePath), ext)
+}
+
+*// dirname("/a/b/c.txt") → "/a/b"
+fn dirname(filePath) {
+  return _path.dirname(String(filePath))
+}
+
+*// extension("file.ntl") → "ntl"  (without the dot)
+fn extension(filePath) {
+  return _path.extname(String(filePath)).slice(1)
+}
+
+*// tmpDir() → path to the OS temp directory
+fn tmpDir() {
+  return require("os").tmpdir()
+}
+
+export {
+  read, readBuf, write, append,
+  readJson, writeJson,
+  exists, isFile, isDir, stat,
+  mkdir, list, listFull, remove, rmdir, copy, move,
+  join, resolve, basename, dirname, extension, tmpDir
+}

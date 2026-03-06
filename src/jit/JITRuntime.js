@@ -1,35 +1,14 @@
 'use strict';
 
-/**
- * NTL JIT Runtime
- *
- * When you run  `ntl run file.ntl`, this pipeline is activated:
- *
- *   NTL source
- *     └─► Lexer + Parser + TypeInferer + TreeShaker
- *           └─► AST (Abstract Syntax Tree)
- *                 └─► Optimizer  (constant folding, dead-code elimination, inlining)
- *                       └─► CodeGen  (JS output)
- *                             └─► JIT Instrumentation  (wraps every function)
- *                                   └─► vm.Script  (pre-compiled by V8)
- *                                         └─► V8 JIT  (interpret → baseline → TurboFan native)
- *                                               └─► Hot-path report (printed after execution)
- *
- * V8 (Node.js engine) IS a real JIT compiler.  The moment a function is called
- * enough times, V8 automatically compiles it to native machine code via TurboFan.
- * This runtime makes that process visible, measurable and controllable.
- */
-
 const vm   = require('vm');
 const path = require('path');
 const fs   = require('fs');
 const { Optimizer } = require('./Optimizer');
 
-// ─── Tier constants ───────────────────────────────────────────────────────────
-const TIER_INTERPRET  = 0;   //    0 – 9  calls  → pure interpretation
-const TIER_BASELINE   = 1;   //   10 – 99 calls  → V8 Baseline compiler
-const TIER_TURBOFAN   = 2;   //  100 – 999 calls → V8 TurboFan  (native machine code)
-const TIER_NATIVE_OPT = 3;   // 1000 +    calls  → V8 fully type-specialised native
+const TIER_INTERPRET  = 0;
+const TIER_BASELINE   = 1;
+const TIER_TURBOFAN   = 2;
+const TIER_NATIVE_OPT = 3;
 
 const THRESHOLDS = [0, 10, 100, 1000];
 const TIER_LABELS = ['Interpret', 'Baseline', 'TurboFan', 'Native-Opt'];
@@ -41,16 +20,15 @@ const TIER_DESC   = [
   'V8 TurboFan   — fully type-specialised native code',
 ];
 
-// ─── Function profile ─────────────────────────────────────────────────────────
 class FnProfile {
   constructor(name) {
     this.name       = name;
     this.calls      = 0;
     this.totalMs    = 0;
     this.tier       = TIER_INTERPRET;
-    this.argTypes   = [];       // history of argument type signatures
+    this.argTypes   = [];
     this.lastUpgrade= 0;
-    this.typeStable = true;     // true if arg types are always the same
+    this.typeStable = true;
     this._prevSig   = null;
   }
 
@@ -58,7 +36,6 @@ class FnProfile {
     this.calls++;
     this.totalMs += durationMs;
 
-    // track type stability (V8 de-optimises when types vary)
     const sig = argTypes.join(',');
     if (this._prevSig !== null && sig !== this._prevSig) this.typeStable = false;
     this._prevSig = sig;
@@ -72,7 +49,7 @@ class FnProfile {
     if (this.calls >= THRESHOLDS[this.tier + 1]) {
       this.tier++;
       this.lastUpgrade = this.calls;
-      return true; // upgraded
+      return true;
     }
     return false;
   }
@@ -82,7 +59,6 @@ class FnProfile {
   tierIcon()  { return TIER_ICONS[this.tier]; }
 }
 
-// ─── JIT profiler (global registry) ──────────────────────────────────────────
 class JITProfiler {
   constructor(opts) {
     this.opts     = Object.assign({ verbose: false, showUpgrades: true }, opts || {});
@@ -151,10 +127,8 @@ class JITProfiler {
   }
 }
 
-// ─── JIT Instrumentation code injected into every compiled script ─────────────
 function buildPreamble(profilerVarName) {
   return `
-/* ntl runtime */
 const ${profilerVarName} = __ntl_jit_profiler__;
 
 function __ntl_wrap__(name, fn) {
@@ -181,23 +155,14 @@ function __ntl_wrap__(name, fn) {
 `;
 }
 
-// ─── Wrap every top-level function declaration in the generated JS ────────────
 function instrumentCode(jsCode) {
   const PVAR = '__ntl_p__';
-
-  // Strategy: insert a wrap re-assignment immediately after each named function
-  // declaration closes its body. This ensures the wrapper is active BEFORE any
-  // top-level code calls that function.
-  //
-  // We do a bracket-counting pass to find where each function body ends, then
-  // insert:  functionName = __ntl_wrap__("functionName", functionName);
 
   const lines = jsCode.split('\n');
   const out   = [];
 
-  // Track which functions we are inside
   let depth        = 0;
-  let currentFn    = null;   // name of the function whose body we are in
+  let currentFn    = null;
   let fnStartDepth = -1;
 
   const fnDeclRe = /^function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/;
@@ -209,7 +174,6 @@ function instrumentCode(jsCode) {
       fnStartDepth = depth;
     }
 
-    // Count brackets in this line
     for (const ch of line) {
       if (ch === '{') depth++;
       else if (ch === '}') depth--;
@@ -217,7 +181,6 @@ function instrumentCode(jsCode) {
 
     out.push(line);
 
-    // When we close the function body back to the starting depth
     if (currentFn !== null && depth === fnStartDepth) {
       out.push(`try { ${currentFn} = __ntl_wrap__(${JSON.stringify(currentFn)}, ${currentFn}); } catch(_){}`);
       currentFn = null;
@@ -227,7 +190,6 @@ function instrumentCode(jsCode) {
   return buildPreamble(PVAR) + out.join('\n');
 }
 
-// ─── Main JIT runner ──────────────────────────────────────────────────────────
 class JITRunner {
   constructor(opts) {
     this.opts     = Object.assign({
@@ -243,25 +205,14 @@ class JITRunner {
     this.optimizer = new Optimizer({ constantFolding: true, deadCode: true, inlining: true });
   }
 
-  /**
-   * Compile NTL source → optimised JS → instrument → run via V8 JIT.
-   *
-   * @param {string} source   NTL source code
-   * @param {string} filename  Original file path (for error messages)
-   * @param {object} compiler  Compiler instance
-   * @param {object} ctx       vm context (environment)
-   * @returns {{ success: boolean, error?: string, optimizations?: object }}
-   */
   run(source, filename, compiler, ctx) {
     const absFile = path.resolve(filename);
 
-    // ── 1. Compile NTL → JS ──────────────────────────────────────────────────
     const result = compiler.compileSource(source, filename, {
       target: 'node', treeShake: true, strict: false,
     });
     if (!result.success) return { success: false, errors: result.errors };
 
-    // ── 2. AST-level optimisations ───────────────────────────────────────────
     let optimStats = { folded: 0, eliminated: 0, inlined: 0 };
     if (this.opts.optimize && result.ast) {
       this.optimizer.optimize(result.ast);
@@ -275,31 +226,25 @@ class JITRunner {
       }
     }
 
-    // ── 3. Inject profiling wrappers ─────────────────────────────────────────
     const instrumentedCode = instrumentCode(result.code);
 
-    // ── 4. Pre-compile with V8 (vm.Script caches the bytecode) ───────────────
     let script;
     try {
       script = new vm.Script(instrumentedCode, {
         filename:        absFile,
         displayErrors:   true,
-        // produceCachedData lets V8 retain the compiled bytecode between runs
         produceCachedData: true,
       });
     } catch (e) {
       return { success: false, errors: [{ message: e.message, file: filename, line: e.lineNumber || 0 }] };
     }
 
-    // ── 5. Build execution context ────────────────────────────────────────────
     const runCtx = Object.assign({
       __ntl_jit_profiler__: this.profiler,
       performance,
     }, ctx || {});
 
-    // ── 6. Execute inside V8's JIT ────────────────────────────────────────────
     try {
-      // Only create context if it's not already a vm context
       if (!vm.isContext(runCtx)) vm.createContext(runCtx);
       script.runInContext(runCtx);
     } catch (e) {
@@ -309,13 +254,9 @@ class JITRunner {
       };
     }
 
-    // ── 7. After execution: handle async top-level (drain microtasks) ─────────
     return { success: true, optimizations: optimStats };
   }
 
-  /**
-   * Print the hot-path report to stderr after execution ends.
-   */
   printReport() {
     const report = this.profiler.report();
     if (report) process.stderr.write(report);

@@ -1,0 +1,408 @@
+class Transform3D {
+  constructor() {
+    this.position = { x: 0, y: 0, z: 0 }
+    this.rotation = { x: 0, y: 0, z: 0 }
+    this.scale    = { x: 1, y: 1, z: 1 }
+    this._dirty   = true
+    this._mat     = null
+  }
+  setPosition(x, y, z) {
+    this.position.x = x; this.position.y = y; this.position.z = z
+    this._dirty = true
+    return this
+  }
+  setRotation(x, y, z) {
+    this.rotation.x = x; this.rotation.y = y; this.rotation.z = z
+    this._dirty = true
+    return this
+  }
+  setScale(x, y, z) {
+    this.scale.x = x; this.scale.y = (y === undefined) ? x : y; this.scale.z = (z === undefined) ? x : z
+    this._dirty = true
+    return this
+  }
+  translate(dx, dy, dz) {
+    this.position.x += dx; this.position.y += dy; this.position.z += dz
+    this._dirty = true
+    return this
+  }
+  rotate(dx, dy, dz) {
+    this.rotation.x += dx; this.rotation.y += dy; this.rotation.z += dz
+    this._dirty = true
+    return this
+  }
+  lookAt(tx, ty, tz) {
+    val dx = tx - this.position.x
+    val dy = ty - this.position.y
+    val dz = tz - this.position.z
+    this.rotation.y = Math.atan2(dx, dz)
+    this.rotation.x = -Math.atan2(dy, Math.sqrt(dx*dx + dz*dz))
+    this._dirty = true
+    return this
+  }
+  getMatrix() {
+    if (!this._dirty && this._mat) { return this._mat }
+    val tx = this.position.x, ty = this.position.y, tz = this.position.z
+    val rx = this.rotation.x, ry = this.rotation.y, rz = this.rotation.z
+    val sx = this.scale.x,   sy = this.scale.y,   sz = this.scale.z
+
+    val cx = Math.cos(rx), sx2 = Math.sin(rx)
+    val cy = Math.cos(ry), sy2 = Math.sin(ry)
+    val cz = Math.cos(rz), sz2 = Math.sin(rz)
+
+    val m00 = (cy*cz + sy2*sx2*sz2)*sx
+    val m01 = (-cy*sz2 + sy2*sx2*cz)*sx
+    val m02 = sy2*cx*sx
+    val m10 = cx*sz2*sy
+    val m11 = cx*cz*sy
+    val m12 = -sx2*sy
+    val m20 = (-sy2*cz + cy*sx2*sz2)*sz
+    val m21 = (sy2*sz2 + cy*sx2*cz)*sz
+    val m22 = cy*cx*sz
+
+    this._mat = [
+      m00, m01, m02, tx,
+      m10, m11, m12, ty,
+      m20, m21, m22, tz,
+      0,   0,   0,   1
+    ]
+    this._dirty = false
+    return this._mat
+  }
+  getNormalMatrix() {
+    val m = this.getMatrix()
+    val sx = this.scale.x, sy = this.scale.y, sz = this.scale.z
+    val isx = 1/sx, isy = 1/sy, isz = 1/sz
+    return [
+      m[0]*isx, m[1]*isx, m[2]*isx, 0,
+      m[4]*isy, m[5]*isy, m[6]*isy, 0,
+      m[8]*isz, m[9]*isz, m[10]*isz,0,
+      0,        0,        0,        1
+    ]
+  }
+}
+
+class Material {
+  constructor(opts) {
+    opts          = opts || {}
+    this.r        = opts.r !== undefined ? opts.r : 200
+    this.g        = opts.g !== undefined ? opts.g : 200
+    this.b        = opts.b !== undefined ? opts.b : 200
+    this.shininess= opts.shininess || 32
+    this.metallic = opts.metallic  || 0
+    this.roughness= opts.roughness || 0.5
+    this.emissive = opts.emissive  || 0
+    if (opts.color) {
+      val c = opts.color
+      if (c.r !== undefined && c.r <= 1) {
+        this.r = Math.round(c.r * 255)
+        this.g = Math.round(c.g * 255)
+        this.b = Math.round(c.b * 255)
+      } else if (c.r !== undefined) {
+        this.r = c.r | 0
+        this.g = c.g | 0
+        this.b = c.b | 0
+      }
+    }
+    if (typeof opts.color === 'string') {
+      val hex = opts.color.replace('#','')
+      this.r = parseInt(hex.slice(0,2),16)
+      this.g = parseInt(hex.slice(2,4),16)
+      this.b = parseInt(hex.slice(4,6),16)
+    }
+  }
+  clone() {
+    return new Material({
+      r: this.r, g: this.g, b: this.b,
+      shininess: this.shininess,
+      metallic:  this.metallic,
+      roughness: this.roughness,
+      emissive:  this.emissive
+    })
+  }
+  static color(r, g, b) {
+    if (typeof r === 'string') { return new Material({ color: r }) }
+    if (r > 1 || g > 1 || b > 1) { return new Material({ r, g, b }) }
+    return new Material({ r: r*255, g: g*255, b: b*255 })
+  }
+  static metal(r, g, b, shininess) {
+    return new Material({ r, g, b, shininess: shininess || 128, metallic: 0.9, roughness: 0.1 })
+  }
+  static matte(r, g, b) {
+    return new Material({ r, g, b, shininess: 8, metallic: 0, roughness: 0.9 })
+  }
+  static emissive(r, g, b, strength) {
+    return new Material({ r, g, b, emissive: strength || 1.0 })
+  }
+}
+
+class Light {
+  constructor(opts) {
+    opts          = opts || {}
+    this.type     = opts.type || 'point'
+    this.x        = opts.x || 0
+    this.y        = opts.y || 5
+    this.z        = opts.z || 0
+    this.dx       = opts.dx || 0
+    this.dy       = opts.dy || -1
+    this.dz       = opts.dz || 0
+    this.r        = opts.r !== undefined ? opts.r : 255
+    this.g        = opts.g !== undefined ? opts.g : 255
+    this.b        = opts.b !== undefined ? opts.b : 255
+    this.intensity= opts.intensity || 1.0
+    this.lightRange = opts.lightRange || 20
+  }
+  static point(x, y, z, r, g, b, intensity, lightRange) {
+    return new Light({ type:'point', x, y, z,
+      r: r||255, g: g||255, b: b||255,
+      intensity: intensity||1, lightRange: lightRange||20 })
+  }
+  static directional(dx, dy, dz, r, g, b, intensity) {
+    return new Light({ type:'directional', dx, dy, dz,
+      r: r||255, g: g||255, b: b||255,
+      intensity: intensity||1 })
+  }
+  static ambient(r, g, b, intensity) {
+    return new Light({ type:'ambient', r: r||255, g: g||255, b: b||255, intensity: intensity||0.3 })
+  }
+}
+
+class Camera3D {
+  constructor(fov, aspect, near, far) {
+    this.fov    = (fov   || 60) * Math.PI / 180
+    this.aspect = aspect || (16/9)
+    this.near   = near   || 0.1
+    this.far    = far    || 1000
+    this.x      = 0
+    this.y      = 2
+    this.z      = 8
+    this.targetX= 0
+    this.targetY= 0
+    this.targetZ= 0
+    this._upX   = 0
+    this._upY   = 1
+    this._upZ   = 0
+    this._projDirty = true
+    this._viewDirty = true
+    this._proj  = null
+    this._view  = null
+  }
+  setPosition(x, y, z) {
+    this.x = x; this.y = y; this.z = z
+    this._viewDirty = true
+    return this
+  }
+  lookAt(x, y, z) {
+    this.targetX = x; this.targetY = y; this.targetZ = z
+    this._viewDirty = true
+    return this
+  }
+  setUp(x, y, z) {
+    this._upX = x; this._upY = y; this._upZ = z
+    this._viewDirty = true
+    return this
+  }
+  setFov(fov) {
+    this.fov = fov * Math.PI / 180
+    this._projDirty = true
+    return this
+  }
+  setAspect(aspect) {
+    this.aspect = aspect
+    this._projDirty = true
+    return this
+  }
+  getProjMatrix() {
+    if (!this._projDirty && this._proj) { return { m: this._proj } }
+    val f   = 1.0 / Math.tan(this.fov * 0.5)
+    val nf  = 1 / (this.near - this.far)
+    this._proj = [
+      f / this.aspect, 0, 0, 0,
+      0, f, 0, 0,
+      0, 0, (this.far + this.near) * nf, 2 * this.far * this.near * nf,
+      0, 0, -1, 0
+    ]
+    this._projDirty = false
+    return { m: this._proj }
+  }
+  getViewMatrix() {
+    if (!this._viewDirty && this._view) { return { m: this._view } }
+    val ex = this.x, ey = this.y, ez = this.z
+    val tx = this.targetX, ty = this.targetY, tz = this.targetZ
+    val upX = this._upX, upY = this._upY, upZ = this._upZ
+
+    var fx = tx-ex, fy = ty-ey, fz = tz-ez
+    val fl = Math.sqrt(fx*fx+fy*fy+fz*fz) || 1
+    fx/=fl; fy/=fl; fz/=fl
+
+    var sx = fy*upZ - fz*upY
+    var sy = fz*upX - fx*upZ
+    var sz = fx*upY - fy*upX
+    val sl = Math.sqrt(sx*sx+sy*sy+sz*sz) || 1
+    sx/=sl; sy/=sl; sz/=sl
+
+    val ux = sy*fz - sz*fy
+    val uy = sz*fx - sx*fz
+    val uz = sx*fy - sy*fx
+
+    this._view = [
+      sx, sy, sz, -(sx*ex + sy*ey + sz*ez),
+      ux, uy, uz, -(ux*ex + uy*ey + uz*ez),
+      -fx,-fy,-fz, fx*ex + fy*ey + fz*ez,
+      0,  0,  0,  1
+    ]
+    this._viewDirty = false
+    return { m: this._view }
+  }
+  getVPMatrix() {
+    val p = this.getProjMatrix().m
+    val v = this.getViewMatrix().m
+    val out = new Array(16)
+    var r = 0
+    while (r < 4) {
+      var c = 0
+      while (c < 4) {
+        out[r*4+c] = p[r*4+0]*v[0*4+c] + p[r*4+1]*v[1*4+c] + p[r*4+2]*v[2*4+c] + p[r*4+3]*v[3*4+c]
+        c++
+      }
+      r++
+    }
+    return { m: out }
+  }
+  orbit(phi, theta, radius) {
+    val x = radius * Math.sin(phi) * Math.cos(theta)
+    val y = radius * Math.cos(phi)
+    val z = radius * Math.sin(phi) * Math.sin(theta)
+    this.setPosition(x + this.targetX, y + this.targetY, z + this.targetZ)
+    return this
+  }
+}
+
+class SceneNode {
+  constructor(opts) {
+    opts          = opts || {}
+    this.name     = opts.name      || 'node'
+    this.mesh     = opts.mesh      || null
+    this.material = opts.material  || null
+    this.transform= new Transform3D()
+    this.children = []
+    this.parent   = null
+    this.visible  = true
+    this._id      = SceneNode._nextId++
+    if (opts.position) { this.transform.setPosition(opts.position.x||0, opts.position.y||0, opts.position.z||0) }
+    if (opts.rotation) { this.transform.setRotation(opts.rotation.x||0, opts.rotation.y||0, opts.rotation.z||0) }
+    if (opts.scale !== undefined) {
+      if (typeof opts.scale === 'number') {
+        this.transform.setScale(opts.scale, opts.scale, opts.scale)
+      } else {
+        this.transform.setScale(opts.scale.x||1, opts.scale.y||1, opts.scale.z||1)
+      }
+    }
+  }
+  add(child) {
+    child.parent = this
+    this.children.push(child)
+    return this
+  }
+  remove(child) {
+    val idx = this.children.indexOf(child)
+    if (idx >= 0) { this.children.splice(idx, 1); child.parent = null }
+    return this
+  }
+  setPosition(x, y, z) { this.transform.setPosition(x, y, z); return this }
+  setRotation(x, y, z) { this.transform.setRotation(x, y, z); return this }
+  setScale(x, y, z)    { this.transform.setScale(x, y, z);    return this }
+  translate(dx, dy, dz){ this.transform.translate(dx, dy, dz); return this }
+  rotate(dx, dy, dz)   { this.transform.rotate(dx, dy, dz);    return this }
+}
+SceneNode._nextId = 1
+
+class Scene {
+  constructor(opts) {
+    opts          = opts || {}
+    this.root     = new SceneNode({ name: 'root' })
+    this.camera   = null
+    this.lights   = []
+    this.skyboxTop    = { r: 40, g: 60, b: 120 }
+    this.skyboxBottom = { r: 20, g: 20, b: 30 }
+    this.fog      = opts.fog   || null
+    this.ambient  = opts.ambient || { r: 30, g: 30, b: 30 }
+    this._renderList = []
+  }
+  add(node) {
+    this.root.add(node)
+    return node
+  }
+  remove(node) {
+    this.root.remove(node)
+    return this
+  }
+  addLight(light) {
+    this.lights.push(light)
+    return light
+  }
+  setCamera(cam) {
+    this.camera = cam
+    return this
+  }
+  setSkybox(topR, topG, topB, botR, botG, botB) {
+    this.skyboxTop    = { r: topR, g: topG, b: topB }
+    this.skyboxBottom = { r: botR||topR, g: botG||topG, b: botB||topB }
+    return this
+  }
+  _collectNodes(node, vpMat, outList) {
+    if (!node.visible) { return }
+    if (node.mesh && node.material) {
+      val modelArr = node.transform.getMatrix()
+      val normArr  = node.transform.getNormalMatrix()
+      val m = vpMat.m, t = modelArr
+      val mvpArr = new Array(16)
+      var r = 0
+      while (r < 4) {
+        var c = 0
+        while (c < 4) {
+          mvpArr[r*4+c] = m[r*4+0]*t[0*4+c] + m[r*4+1]*t[1*4+c] + m[r*4+2]*t[2*4+c] + m[r*4+3]*t[3*4+c]
+          c++
+        }
+        r++
+      }
+      outList.push({
+        mesh:     node.mesh,
+        material: node.material,
+        mvp:      { m: mvpArr },
+        model:    { m: modelArr },
+        normalMat:{ m: normArr }
+      })
+    }
+    each child in node.children {
+      this._collectNodes(child, vpMat, outList)
+    }
+  }
+  render(renderer) {
+    if (!this.camera || !renderer) { return }
+    val vp = this.camera.getVPMatrix()
+    renderer.drawSkybox(this.skyboxTop, this.skyboxBottom)
+    this._renderList = []
+    this._collectNodes(this.root, vp, this._renderList)
+    val cam = { x: this.camera.x, y: this.camera.y, z: this.camera.z }
+    val lights = this.lights
+    each item in this._renderList {
+      renderer.drawMesh(
+        item.mesh,
+        item.mvp,
+        item.model,
+        item.normalMat,
+        lights,
+        item.material,
+        cam
+      )
+    }
+  }
+}
+
+exports.Transform3D = Transform3D
+exports.Material    = Material
+exports.Light       = Light
+exports.Camera3D    = Camera3D
+exports.SceneNode   = SceneNode
+exports.Scene       = Scene

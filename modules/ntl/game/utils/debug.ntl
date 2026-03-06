@@ -1,0 +1,201 @@
+class DebugDraw {
+  constructor(renderer, ui) {
+    this._renderer = renderer
+    this._ui       = ui
+    this._lines    = []
+    this._spheres  = []
+    this._boxes    = []
+    this._texts    = []
+    this._enabled  = true
+    this._statsHistory = []
+    this._maxHistory   = 60
+  }
+
+  enable()  { this._enabled = true  }
+  disable() { this._enabled = false }
+
+  line(x0, y0, z0, x1, y1, z1, r, g, b) {
+    if (!this._enabled) { return }
+    this._lines.push({ x0,y0,z0,x1,y1,z1, r:r||255, g:g||255, b:b||255 })
+  }
+
+  box(cx, cy, cz, sx, sy, sz, r, g, b) {
+    if (!this._enabled) { return }
+    this._boxes.push({ cx,cy,cz, sx:sx||1, sy:sy||1, sz:sz||1, r:r||0, g:g||255, b:b||0 })
+  }
+
+  sphere(cx, cy, cz, radius, r, g, b) {
+    if (!this._enabled) { return }
+    this._spheres.push({ cx,cy,cz, radius:radius||0.5, r:r||255, g:g||255, b:b||0 })
+  }
+
+  text3d(x, y, z, str, r, g, b) {
+    if (!this._enabled) { return }
+    this._texts.push({ x,y,z, str, r:r||255, g:g||255, b:b||255 })
+  }
+
+  _projectPoint(x, y, z, camera) {
+    val vp = camera.getVPMatrix()
+    val m  = vp.m
+    val cx = m[0]*x + m[1]*y + m[2]*z + m[3]
+    val cy = m[4]*x + m[5]*y + m[6]*z + m[7]
+    val cw = m[12]*x + m[13]*y + m[14]*z + m[15]
+    if (cw < 0.001) { return null }
+    val w  = this._renderer.width
+    val h  = this._renderer.height
+    return {
+      sx: ((cx / cw) + 1) * w * 0.5,
+      sy: (1 - (cy / cw)) * h * 0.5,
+      depth: cw
+    }
+  }
+
+  _drawLine2d(sx0, sy0, sx1, sy1, r, g, b) {
+    if (!this._ui) { return }
+    this._ui.line(sx0|0, sy0|0, sx1|0, sy1|0, r, g, b, 1)
+  }
+
+  render(camera) {
+    if (!this._enabled || !camera || !this._ui) { return }
+
+    each ln in this._lines {
+      val p0 = this._projectPoint(ln.x0, ln.y0, ln.z0, camera)
+      val p1 = this._projectPoint(ln.x1, ln.y1, ln.z1, camera)
+      if (p0 && p1) {
+        this._drawLine2d(p0.sx, p0.sy, p1.sx, p1.sy, ln.r, ln.g, ln.b)
+      }
+    }
+
+    each box in this._boxes {
+      val hx = box.sx*0.5, hy = box.sy*0.5, hz = box.sz*0.5
+      val corners = [
+        [box.cx-hx, box.cy-hy, box.cz-hz],
+        [box.cx+hx, box.cy-hy, box.cz-hz],
+        [box.cx+hx, box.cy-hy, box.cz+hz],
+        [box.cx-hx, box.cy-hy, box.cz+hz],
+        [box.cx-hx, box.cy+hy, box.cz-hz],
+        [box.cx+hx, box.cy+hy, box.cz-hz],
+        [box.cx+hx, box.cy+hy, box.cz+hz],
+        [box.cx-hx, box.cy+hy, box.cz+hz]
+      ]
+      val edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]]
+      val pts   = corners.map(c => this._projectPoint(c[0], c[1], c[2], camera))
+      each edge in edges {
+        val p0 = pts[edge[0]], p1 = pts[edge[1]]
+        if (p0 && p1) {
+          this._drawLine2d(p0.sx, p0.sy, p1.sx, p1.sy, box.r, box.g, box.b)
+        }
+      }
+    }
+
+    each sp in this._spheres {
+      val pc = this._projectPoint(sp.cx, sp.cy, sp.cz, camera)
+      if (!pc) { continue }
+      val pr = this._projectPoint(sp.cx + sp.radius, sp.cy, sp.cz, camera)
+      if (!pr) { continue }
+      val screenR = Math.abs(pr.sx - pc.sx)
+      this._ui.circle(pc.sx|0, pc.sy|0, screenR|0, sp.r, sp.g, sp.b, 100)
+    }
+
+    each tx in this._texts {
+      val pt = this._projectPoint(tx.x, tx.y, tx.z, camera)
+      if (pt) {
+        this._ui.text(tx.str, pt.sx|0, pt.sy|0, tx.r, tx.g, tx.b, 1)
+      }
+    }
+
+    this._lines   = []
+    this._spheres = []
+    this._boxes   = []
+    this._texts   = []
+  }
+
+  drawAxes(x, y, z, size) {
+    size = size || 1
+    this.line(x,y,z, x+size,y,z, 255,0,0)
+    this.line(x,y,z, x,y+size,z, 0,255,0)
+    this.line(x,y,z, x,y,z+size, 0,0,255)
+  }
+
+  drawGrid(y, halfSize, step, r, g, b) {
+    halfSize = halfSize || 10
+    step     = step     || 1
+    r = r||60; g = g||60; b = b||80
+    var x = -halfSize
+    while (x <= halfSize) {
+      this.line(x, y, -halfSize, x, y, halfSize, r, g, b)
+      x += step
+    }
+    var z = -halfSize
+    while (z <= halfSize) {
+      this.line(-halfSize, y, z, halfSize, y, z, r, g, b)
+      z += step
+    }
+  }
+
+  drawFrustum(camera) {
+    val near = 0.5, far = 10
+    val hw = Math.tan(camera.fov * 0.5) * near * camera.aspect
+    val hh = Math.tan(camera.fov * 0.5) * near
+    this.box(camera.x, camera.y, camera.z, 0.2, 0.2, 0.2, 255, 200, 0)
+  }
+
+  updateStats(fps, triangles) {
+    this._statsHistory.push({ fps, triangles })
+    if (this._statsHistory.length > this._maxHistory) {
+      this._statsHistory.shift()
+    }
+  }
+
+  drawFpsGraph(x, y, w, h) {
+    if (!this._ui || this._statsHistory.length < 2) { return }
+    this._ui.rect(x, y, w, h, 10, 10, 20, 200)
+    this._ui.rectBorder(x, y, w, h, 60, 60, 80)
+    var i = 0
+    while (i < this._statsHistory.length - 1) {
+      val s0 = this._statsHistory[i]
+      val s1 = this._statsHistory[i+1]
+      val x0 = x + (i / this._maxHistory) * w
+      val x1 = x + ((i+1) / this._maxHistory) * w
+      val y0 = y + h - (s0.fps / 120) * h
+      val y1 = y + h - (s1.fps / 120) * h
+      val col = s0.fps >= 55 ? [0,220,80] : s0.fps >= 30 ? [220,180,0] : [220,60,0]
+      this._ui.line(x0|0, y0|0, x1|0, y1|0, col[0], col[1], col[2])
+      i++
+    }
+    val last = this._statsHistory[this._statsHistory.length - 1]
+    this._ui.text('FPS:'+last.fps, x+2, y+2, 200, 220, 100, 1)
+  }
+}
+
+class Profiler {
+  constructor() {
+    this._marks   = new Map()
+    this._results = new Map()
+  }
+
+  mark(name) {
+    this._marks.set(name, Date.now())
+  }
+
+  measure(name) {
+    val start = this._marks.get(name)
+    if (start === undefined) { return 0 }
+    val elapsed = Date.now() - start
+    this._results.set(name, elapsed)
+    return elapsed
+  }
+
+  get(name) { return this._results.get(name) || 0 }
+
+  report() {
+    val out = []
+    this._results.forEach((v, k) => { out.push(k + ': ' + v + 'ms') })
+    return out.join(', ')
+  }
+
+  clear() { this._marks.clear(); this._results.clear() }
+}
+
+exports.DebugDraw = DebugDraw
+exports.Profiler  = Profiler

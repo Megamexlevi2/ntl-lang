@@ -1,0 +1,127 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+
+val childProcess = require("child_process")
+val nodeFs       = require("fs")
+val nodePath     = require("path")
+val os           = require("os")
+
+val IS_TERMUX      = nodeFs.existsSync("/data/data/com.termux")
+val TERMUX_PREFIX  = process.env.PREFIX || "/data/data/com.termux/files/usr"
+
+fn shell(cmd, opts) {
+  opts = opts || {}
+  return childProcess.execSync(cmd, Object.assign({ encoding: "utf-8" }, opts)).trim()
+}
+
+fn shellAsync(cmd, opts) {
+  return new Promise((resolve, reject) => {
+    childProcess.exec(cmd, Object.assign({ encoding: "utf-8" }, opts || {}), (err, stdout, stderr) => {
+      if (err && !opts?.ignoreError) { reject(err) }
+      else { resolve({ stdout: (stdout || "").trim(), stderr: (stderr || "").trim() }) }
+    })
+  })
+}
+
+fn isTermux() { return IS_TERMUX }
+
+fn pkgInstall(pkg) {
+  if (!IS_TERMUX) { throw new Error("pkgInstall only available on Termux") }
+  return shellAsync(`pkg install -y ${pkg}`)
+}
+
+fn pkgUpdate() {
+  if (!IS_TERMUX) { throw new Error("pkgUpdate only available on Termux") }
+  return shellAsync("pkg update -y")
+}
+
+fn vibrate(duration) {
+  if (!IS_TERMUX) { return }
+  try { shellAsync(`termux-vibrate -d ${duration || 50}`) } catch (_) {}
+}
+
+fn notification(title, content) {
+  if (!IS_TERMUX) { return }
+  return shellAsync(`termux-notification --title "${title}" --content "${content}"`)
+}
+
+fn getBatteryInfo() {
+  if (!IS_TERMUX) { return null }
+  try { return JSON.parse(shell("termux-battery-status")) } catch (_) { return null }
+}
+
+fn getWifiInfo() {
+  if (!IS_TERMUX) { return null }
+  try { return JSON.parse(shell("termux-wifi-connectioninfo")) } catch (_) { return null }
+}
+
+fn getCameraInfo() {
+  if (!IS_TERMUX) { return null }
+  try { return JSON.parse(shell("termux-camera-info")) } catch (_) { return null }
+}
+
+fn capturePhoto(output) {
+  if (!IS_TERMUX) { throw new Error("capturePhoto only available on Termux") }
+  val outPath = output || nodePath.join(os.tmpdir(), `ntl_photo_${Date.now()}.jpg`)
+  return shellAsync(`termux-camera-photo -c 0 ${outPath}`).then(() => outPath)
+}
+
+fn getLocation() {
+  if (!IS_TERMUX) { return null }
+  try { return JSON.parse(shell("termux-location")) } catch (_) { return null }
+}
+
+fn speak(text, lang) {
+  if (!IS_TERMUX) { return }
+  return shellAsync(`termux-tts-speak -l ${lang || "en"} "${text.replace(/"/g, '\\"')}"`)
+}
+
+fn clipboard(text) {
+  if (!IS_TERMUX) { return { get: () => "", set: (t) => {} } }
+  if (text !== undefined) {
+    return shellAsync(`termux-clipboard-set "${text.replace(/"/g, '\\"')}"`)
+  }
+  return shell("termux-clipboard-get")
+}
+
+fn listContacts() {
+  if (!IS_TERMUX) { return [] }
+  try { return JSON.parse(shell("termux-contact-list")) } catch (_) { return [] }
+}
+
+fn sms(number, message) {
+  if (!IS_TERMUX) { throw new Error("sms only available on Termux") }
+  return shellAsync(`termux-sms-send -n "${number}" "${message.replace(/"/g, '\\"')}"`)
+}
+
+fn termuxInfo() {
+  return {
+    isTermux:    IS_TERMUX,
+    prefix:      TERMUX_PREFIX,
+    home:        os.homedir(),
+    arch:        os.arch(),
+    platform:    os.platform(),
+    cpus:        os.cpus().length,
+    memory:      os.totalmem(),
+    freeMem:     os.freemem(),
+    nodeVersion: process.version
+  }
+}
+
+exports.isTermux     = isTermux
+exports.shell        = shell
+exports.shellAsync   = shellAsync
+exports.pkgInstall   = pkgInstall
+exports.pkgUpdate    = pkgUpdate
+exports.vibrate      = vibrate
+exports.notification = notification
+exports.getBatteryInfo = getBatteryInfo
+exports.getWifiInfo  = getWifiInfo
+exports.getCameraInfo = getCameraInfo
+exports.capturePhoto = capturePhoto
+exports.getLocation  = getLocation
+exports.speak        = speak
+exports.clipboard    = clipboard
+exports.listContacts = listContacts
+exports.sms          = sms
+exports.termuxInfo   = termuxInfo

@@ -3,10 +3,6 @@
 const { JITRunner, JITProfiler, instrumentCode } = require('./JITRuntime');
 const { Optimizer } = require('./Optimizer');
 
-/**
- * JITPipeline — thin facade kept for backward compatibility.
- * The real work is done inside JITRunner / JITRuntime.js.
- */
 class JITPipeline {
   constructor(opts) {
     this.opts      = Object.assign({ verbose: false, profile: true, optimize: true }, opts || {});
@@ -14,10 +10,6 @@ class JITPipeline {
     this._runner   = null;
   }
 
-  /**
-   * Compile NTL source, apply optimizations, inject JIT instrumentation.
-   * Returns { success, code, optimizations, errors }.
-   */
   compileWithJIT(source, filename, compiler) {
     const result = compiler.compileSource(source, filename, { target: 'node', treeShake: true });
     if (!result.success) return result;
@@ -33,9 +25,6 @@ class JITPipeline {
     });
   }
 
-  /**
-   * Run NTL source through the full JIT pipeline (compile + optimize + execute).
-   */
   run(source, filename, compiler, ctx) {
     this._runner = new JITRunner({
       verbose:      this.opts.verbose,

@@ -1,0 +1,108 @@
+class GameEngine {
+  constructor(opts) {
+    opts            = opts || {}
+    this._activity  = null
+    this._running   = false
+    this._lastTime  = 0
+    this._fps       = opts.fps || 60
+    this._frameTime = 1000 / this._fps
+    this._frame     = 0
+    this._actualFps = 0
+    this._fpsCount  = 0
+    this._fpsTimer  = 0
+    this.width      = opts.width  || 1280
+    this.height     = opts.height || 720
+    this.renderer   = null
+    this.display    = null
+    this.scene      = null
+    this.input      = null
+    this.audio      = null
+    this.physics    = null
+    this._subsystems = opts.subsystems || {}
+  }
+
+  _init(ActivityClass) {
+    val S = this._subsystems
+    this.renderer = new S.Renderer3D(this.width, this.height)
+    this.display  = S.createDisplay(this.width, this.height, { mode: 'auto' })
+    this.scene    = new S.Scene()
+    this.input    = new S.InputSystem()
+    this.audio    = new S.AudioSystem()
+    this.physics  = new S.PhysicsWorld()
+
+    this.scene.camera = new S.Camera3D(60, this.width / this.height, 0.1, 1000)
+    this.scene.camera.setPosition(0, 2, 8)
+    this.scene.camera.lookAt(0, 0, 0)
+
+    val sun = { type: 'directional', dx: -0.5, dy: -1, dz: -0.8, r: 255, g: 245, b: 220, intensity: 1.2 }
+    this.scene.addLight(sun)
+    val fill = { type: 'point', x: -5, y: 3, z: 5, r: 120, g: 150, b: 255, intensity: 0.4, range: 30 }
+    this.scene.addLight(fill)
+
+    this._activity = new ActivityClass()
+    this._activity._attachEngine(this)
+
+    this.input.setup()
+    this._activity.onCreate()
+    this._activity.onStart()
+    this._activity.onResume()
+
+    process.on('SIGINT', () => {
+      this.stop()
+      process.exit(0)
+    })
+  }
+
+  _loop() {
+    if (!this._running) { return }
+    val now = Date.now()
+    val dt  = Math.min((now - this._lastTime) / 1000, 0.1)
+    this._lastTime = now
+
+    this._fpsCount++
+    this._fpsTimer += dt
+    if (this._fpsTimer >= 1) {
+      this._actualFps = this._fpsCount
+      this._fpsCount  = 0
+      this._fpsTimer  = 0
+    }
+
+    this._activity._tick(dt)
+    this._frame++
+
+    val elapsed = Date.now() - now
+    val wait    = Math.max(0, this._frameTime - elapsed)
+    setTimeout(() => { this._loop() }, wait)
+  }
+
+  start(ActivityClass) {
+    this._init(ActivityClass)
+    this._running  = true
+    this._lastTime = Date.now()
+    this._loop()
+    return this
+  }
+
+  stop() {
+    this._running = false
+    if (this._activity) {
+      try { this._activity.onPause()   } catch (_) {}
+      try { this._activity.onStop()    } catch (_) {}
+      try { this._activity.onDestroy() } catch (_) {}
+    }
+    if (this._display) { try { this._display.close() } catch (_) {} }
+    if (this._input)   { try { this._input.destroy()  } catch (_) {} }
+  }
+
+  get fps()   { return this._actualFps }
+  get frame() { return this._frame }
+}
+
+fn run(ActivityClass, opts) {
+  val engine = new GameEngine(opts || {})
+  engine.start(ActivityClass)
+  return engine
+}
+
+exports.GameEngine = GameEngine
+exports.run        = run

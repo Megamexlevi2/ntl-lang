@@ -12,40 +12,53 @@ GitHub: [github.com/Megamexlevi2/ntl-lang](https://github.com/Megamexlevi2/ntl-l
 
 <div align="center">
 
-# NTL Language — v3.0.0
+# NTL — The Language That Ends the Conversation
 
-**A full-stack programming language that compiles to JavaScript.**  
-Write your backend API, database layer, and frontend UI components in one clean, expressive syntax.
+**One language. Backend, frontend, database, real-time systems, and a full GPU-accelerated 3D game engine.  
+Everything compiles to blazing-fast JavaScript. Zero dependencies. Zero compromises.**
 
 [![Node.js ≥18](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
 [![Zero npm dependencies](https://img.shields.io/badge/dependencies-zero-blue)](package.json)
 [![Tests: 74/74](https://img.shields.io/badge/tests-74%2F74%20passing-brightgreen)](#)
-[[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 *Created by David Dev — [github.com/Megamexlevi2/ntl-lang](https://github.com/Megamexlevi2/ntl-lang)*
-
-</div>
 
 ---
 
 ## Why NTL?
 
-NTL is a **unified full-stack language**: one syntax for your HTTP server, database queries, real-time websockets, and React/JSX components. It compiles to clean, fast JavaScript and runs on any runtime that supports Node.js modules.
+Most languages make you choose: server or client, compiled or interpreted, safe or fast. NTL refuses every tradeoff. It compiles to clean, optimized JavaScript, runs on Node.js, and ships with a standard library so complete that you'll never open `npm install` again.
 
-| Feature | Status |
+NTL's syntax is deliberately expressive: pattern-matching guards (`have`), optional pipelines, macro expansion, decorators, traits, abstract classes, generators, and a structural type system all coexist without ceremony. This makes NTL particularly well-suited for domains that demand precise, declarative control over data flow, transformations, and rule systems — from compilers and interpreters to game logic, protocol parsers, and domain-specific rule engines.
+
+Every feature listed below is **built in, zero dependencies, ready on day one:**
+
+| System | What you get |
 |---|---|
-| Backend HTTP server, routing, middleware | ✅ Built-in |
-| SQLite database with query builder + ORM | ✅ Built-in |
-| Frontend JSX components (auto-compiled) | ✅ Built-in |
-| Server-side rendering (SSR) | ✅ Backend can import JSX |
-| Real-time WebSockets (RFC 6455) | ✅ Zero deps |
-| Auth: JWT, AES, bcrypt-style hashing | ✅ Built-in |
-| Zod-like schema validation | ✅ Built-in |
-| AI/LLM: OpenAI, Anthropic, Ollama, Groq | ✅ Built-in |
-| Full test runner with assertions | ✅ Built-in |
-| All Node.js built-ins work directly | ✅ |
-| Any npm package works via `require()` | ✅ |
-| Zero npm dependencies for production | ✅ |
+| HTTP Server | Routing, middleware, multipart, SSE, compression |
+| Database | SQLite ORM, query builder, migrations, transactions |
+| Frontend | JSX components, SSR, auto-compilation, custom pragma |
+| WebSockets | Full RFC 6455, rooms, broadcast, reconnection |
+| Auth | JWT, AES-256, bcrypt-style hashing, CSRF |
+| Validation | Zod-style schemas with full type inference |
+| AI / LLM | OpenAI, Anthropic, Ollama, Groq — one unified API |
+| Testing | Full test runner, assertions, mocks, coverage |
+| **3D Game Engine** | **GPU-accelerated rendering, physics, UI, particles, animation** |
+| **Camera Controllers** | **FPS, Orbit, Follow, Fly, CameraShake — all built-in** |
+| **Rigid Body Physics** | **Collision detection, impulse response, gravity** |
+| **Full UI System** | **Button, Slider, Checkbox, ProgressBar, TextInput — pixel-perfect** |
+| **Tweens & Easing** | **24 easing functions, chainable, yoyo, loop, delay** |
+| **Particle System** | **Fire, smoke, explosion presets + fully customizable emitters** |
+| **Raycasting** | **Screen-to-world, AABB, sphere, triangle intersection** |
+| **Tilemap & Terrain** | **A* pathfinding, procedural heightmap, noise terrain** |
+| **Animation System** | **Keyframe clips, state machine, any-property targeting** |
+| Display Backends | `/dev/fb0` framebuffer, ANSI truecolor terminal, BMP file output |
+| Node.js interop | Every built-in and every npm package works via `require()` |
+| **Binary Compilation** | **Compile to Linux, Android, Windows (17 targets) with `ntl binary`** |
+| **WebAssembly** | **Emit real `.wasm` binaries from NTL source — no emscripten, no toolchain** |
+| **Decorator system** | **@singleton @memo @retry @timeout @cache @log @deprecated @bind — built-in** |
+| **`have` operator** | **Pattern matching, membership, type guards, range checks — one operator** |
 
 ---
 
@@ -81,6 +94,63 @@ node main.js run examples/fullstack_server.ntl
 **Requirements:** Node.js ≥ 18.0.0
 
 ---
+
+
+## Project Structure
+
+```
+ntl/
+├── main.js              # CLI entry point
+├── src/
+│   ├── compiler.js      # Compilation pipeline orchestrator
+│   ├── error.js         # Error formatting
+│   ├── utils.js         # Shared utilities
+│   ├── native.js        # Binary compilation (ntl binary)
+│   ├── pipeline/        # Core compiler stages
+│   │   ├── lexer.js     # Tokenizer
+│   │   ├── parser.js    # AST builder
+│   │   ├── scope.js     # Scope & variable analysis
+│   │   ├── typechecker.js
+│   │   ├── typeinfer.js
+│   │   ├── codegen.js   # JavaScript code generation
+│   │   └── treeshaker.js
+│   ├── transforms/      # Source transforms
+│   │   ├── jsx.js       # JSX → React.createElement
+│   │   └── formatter.js # Code formatter
+│   └── runtime/         # Module system
+│       ├── loader.js    # ntl: stdlib loader
+│       ├── resolver.js  # Module path resolver
+│       ├── bundler.js   # Bundler
+│       └── nax.js       # Package manager
+├── stdlib/              # Standard library (written in NTL)
+│   ├── core/            # Language essentials
+│   │   ├── fs.ntl       # File system (raw OS bindings, no require('fs'))
+│   │   ├── crypto.ntl   # Hashing, encryption, JWT, UUID
+│   │   ├── events.ntl   # EventEmitter
+│   │   ├── queue.ntl    # Job queues
+│   │   └── utils.ntl    # Utility helpers
+│   ├── net/             # Networking
+│   │   ├── http.ntl     # HTTP server/client
+│   │   ├── ws.ntl       # WebSockets
+│   │   └── mail.ntl     # SMTP email
+│   ├── data/            # Data & storage
+│   │   ├── db.ntl       # SQLite database
+│   │   ├── validate.ntl # Schema validation
+│   │   ├── cache.ntl    # In-memory cache
+│   │   ├── web.ntl      # HTML/CSS/DOM tools
+│   │   └── obf.ntl      # Code obfuscation
+│   ├── tools/           # Developer tools
+│   │   ├── test.ntl     # Test runner
+│   │   ├── logger.ntl   # Structured logging
+│   │   └── env.ntl      # Environment variables
+│   ├── ai/
+│   │   └── ai.ntl       # AI/LLM integrations
+│   └── mobile/
+│       └── android.ntl  # Android bridge
+├── tests/
+│   └── all.ntl          # Full stdlib test suite (74 tests)
+└── examples/            # Example programs
+```
 
 ## Quick Start
 
@@ -338,6 +408,7 @@ fn ProductCard({name, price, image, onBuy}) {
 
 ```
 ntl run    <file.ntl>              Execute an NTL file immediately
+ntl binary <file.ntl>              Compile to native binary  [--target] [--standalone] [--all]
 ntl build  <file.ntl|ntl.json>    Compile to JavaScript
 ntl bundle <file|dir> [-o out]    Bundle multiple files into one
 ntl check  <file.ntl>             Type-check without emitting
@@ -519,6 +590,129 @@ rex.speak()
 log rex.fullName
 ```
 
+### Decorators
+
+NTL has a full set of built-in decorators that work on functions and classes — no packages needed.
+
+```ntl
+// ─── @class — attach metadata to a class ─────────────────
+@class
+class User {
+  init(name, email) {
+    this.name  = name
+    this.email = email
+  }
+}
+// User.__ntl_meta → { name: "User", decorators: ["class"], created: ... }
+
+// ─── @singleton ───────────────────────────────────────────
+@singleton
+class Config {
+  init() { this.env = process.env.NODE_ENV ?? "dev" }
+}
+
+val a = new Config()
+val b = new Config()
+log a === b   // true — same instance every time
+
+// ─── @sealed — prevent subclassing and mutation ───────────
+@sealed
+class Token {
+  init(value) { this.value = value }
+}
+
+// ─── @abstract — cannot be instantiated directly ──────────
+@abstract
+class Shape {
+  area() { raise "not implemented" }
+}
+
+class Circle extends Shape {
+  init(r) { this.r = r }
+  area() { return Math.PI * this.r ** 2 }
+}
+
+// ─── @memo — memoize function results ─────────────────────
+@memo
+fn fib(n) {
+  if n <= 1 { return n }
+  return fib(n - 1) + fib(n - 2)
+}
+
+log fib(40)  // computed once per unique arg, then cached
+
+// ─── @retry(n) — retry async functions on failure ─────────
+@retry(3)
+async fn fetchUser(id) {
+  return await http.get("/users/{id}")
+}
+// auto-retries up to 3x with exponential backoff
+
+// ─── @timeout(ms) — fail after N milliseconds ─────────────
+@timeout(5000)
+async fn slowQuery() {
+  return await db.query("SELECT ...")
+}
+// throws "Timeout after 5000ms" if it takes longer
+
+// ─── @deprecated(message) ────────────────────────────────
+@deprecated("use newApi() instead")
+fn oldApi() {
+  return "legacy"
+}
+// logs warning to console on every call
+
+// ─── @log — trace every call ──────────────────────────────
+@log
+fn processPayment(amount, card) {
+  return charge(card, amount)
+}
+// logs: [processPayment] called with [...args]
+// logs: [processPayment] returned [result]
+
+// ─── @cache(ttl_ms) — cache return values ─────────────────
+@cache(60000)
+fn getExchangeRate(from, to) {
+  return http.get("/rates/{from}/{to}")
+}
+// result cached for 60 seconds per unique argument combination
+
+// ─── @bind — auto-bind class methods to 'this' ────────────
+@bind
+class Timer {
+  init() { this.count = 0 }
+  tick() { this.count++ }   // 'this' always bound, safe as callback
+}
+
+val timer = new Timer()
+setInterval(timer.tick, 1000)  // works without .bind(timer)
+
+// ─── @validate(schema) — runtime schema validation ────────
+@validate
+fn createUser(data) {
+  return db.insert("users", data)
+}
+
+// ─── Stacking decorators ──────────────────────────────────
+@memo
+@retry(2)
+@timeout(3000)
+@log
+async fn criticalFetch(id) {
+  return await api.get("/critical/{id}")
+}
+
+// ─── @class on any target ────────────────────────────────
+@singleton
+@sealed
+class AppState {
+  init() {
+    this.users    = []
+    this.sessions = new Map()
+  }
+}
+```
+
 ### Destructuring
 
 ```ntl
@@ -573,27 +767,126 @@ val label = match role {
 }
 ```
 
-### Safe Operations
+### `have` — Pattern Guard Operator
+
+`have` is NTL's unified guard and pattern-matching operator. It replaces `if`, optional chaining, `in`, `instanceof`, regex tests, and range checks with a single readable syntax.
+
+```ntl
+// ─── membership ──────────────────────────────────────────
+val fruits = ["apple", "banana", "mango"]
+
+have "banana" in fruits {
+  log "found"
+}
+
+have "grape" in fruits {
+  log "exists"
+} else {
+  log "not in list"
+}
+
+// Works with arrays, Sets, objects (key check), and strings
+have "hello" in "hello world" { log "substring found" }
+have "port"  in config         { log "port is configured" }
+have user.id in cache          { log "cache hit" }
+
+// ─── early return (guard form) ───────────────────────────
+fn process(req) {
+  have req.body        else { return 400 }
+  have req.body.email  else { return "missing email" }
+  have req.body.name   else { return "missing name" }
+
+  // guaranteed: body, email, name all exist here
+  return save(req.body)
+}
+
+// ─── range check ─────────────────────────────────────────
+have age between 18 99 {
+  log "valid age"
+}
+
+have score between 0 100 else {
+  raise "score out of range"
+}
+
+// ─── regex match ─────────────────────────────────────────
+have email matches /^[\w.]+@[\w.]+\.[a-z]{2,}$/ {
+  log "valid email"
+} else {
+  return "bad email format"
+}
+
+// ─── type check ──────────────────────────────────────────
+have value is String  { log "it's a string" }
+have value is Number  { log "it's a number" }
+have value is Array   { log "it's an array" }
+
+have value is not String {
+  raise TypeError("expected string")
+}
+
+// ─── string pattern ──────────────────────────────────────
+have path startsWith "/api" { log "API route" }
+have file endsWith ".ntl"   { log "NTL source" }
+
+// ─── value binding ───────────────────────────────────────
+// (captures the value while checking, like ifhave but inline)
+have db.find(id) as user {
+  log "found:", user.name
+} else {
+  log "not found"
+}
+
+// ─── safe deep access ────────────────────────────────────
+// have as expression = null-safe chain
+val city = have user.profile.address.city   // never throws
+val port = have config.server.port ?? 3000
+```
+
+### `ifhave` — Conditional Binding
+
+```ntl
+// run a block only when value exists (non-null, non-false)
+ifhave user.name as name {
+  log "Hello,", name
+} else {
+  log "anonymous"
+}
+
+// works with any expression — functions, async, find
+ifhave list.find(x => x.active) as item {
+  log "active item:", item.id
+}
+
+// membership patterns
+ifhave token in validTokens {
+  log "authorized"
+}
+
+// range
+ifhave score between 90 100 {
+  log "A grade"
+}
+
+// regex
+ifhave input matches /^\d{4}-\d{2}-\d{2}$/ {
+  log "date format valid"
+}
+```
+
+### Other Safe Operations
 
 ```ntl
 // try? — returns null instead of throwing
-val parsed  = try? JSON.parse(input)
-val user    = try? await fetchUser(id)
+val parsed = try? JSON.parse(input)
+val user   = try? await fetchUser(id)
 
-// ifhave — run block only if value is not null/undefined
-ifhave user as u { log u.name }
-
-// ifset — run if variable is defined
+// ifset — run if variable is defined (not undefined)
 ifset config.port as port { log "Port:", port }
 
-// have — safe deep access (null-safe chain, returns undefined instead of throwing)
-val city   = have user.profile.address.city
-val nested = have deeply.nested.property.value
-
-// Optional chaining and nullish coalescing
+// Optional chaining + nullish coalescing
 val name = user?.profile?.name ?? "Anonymous"
 val port = env?.PORT ?? 3000
-val len  = arr?.length ?? 0
 ```
 
 ### Generators
@@ -731,6 +1024,1101 @@ log path.join("/home", "user", "docs")
 log os.cpus().length, "CPU cores"
 log crypto.randomBytes(16).toString("hex")
 ```
+
+## How NTL Modules Work
+
+NTL built-in modules use the `ntl:` prefix. They are **only available inside NTL programs** — the NTL runtime automatically intercepts `require("ntl:...")` calls and loads the correct module.
+
+```ntl
+// These all work inside any .ntl file:
+val http     = require("ntl:http")
+val db       = require("ntl:db")
+val crypto   = require("ntl:crypto")
+val validate = require("ntl:validate")
+```
+
+When you build a NTL file with `ntl build`, the output JavaScript automatically includes a small runtime preamble that makes `ntl:` module loading work. You can run the output file directly with Node.js:
+
+```bash
+ntl build app.ntl -o dist/app.js
+node dist/app.js          # works — preamble is included
+```
+
+> **Important:** The compiled `.js` output is valid Node.js, but it depends on having the NTL runtime available (the `ntl-lang` package on npm, or a local NTL installation). You cannot copy just the `.js` file to a machine without NTL installed and expect `ntl:` modules to resolve. For fully self-contained deployment, use `ntl bundle`:
+
+```bash
+ntl bundle app.ntl -o dist/bundle.js    # single-file, no NTL runtime needed
+```
+
+### Module Loading Rules
+
+| Prefix | Example | Works in |
+|--------|---------|----------|
+| `ntl:` | `require("ntl:http")` | NTL files, compiled output with preamble |
+| `./` | `require("./utils")` | NTL files — resolves relative to source |
+| bare name | `require("path")`, `require("axios")` | NTL files — Node.js built-ins and npm packages |
+
+### Writing Modules in NTL (for NTL)
+
+You can write your own `.ntl` modules and `require()` them from other NTL files. They compile and load just like any other module:
+
+```
+my-project/
+  src/
+    main.ntl          ← require("./utils") works here
+    utils.ntl         ← your module
+    db/
+      queries.ntl     ← require("../utils") works here
+```
+
+Modules auto-export via `exports.x = x` or `module.exports = { ... }`. See the [Creating Your Own Modules](#creating-your-own-modules) section for full examples.
+
+---
+
+
+## Compiling to Binary
+
+NTL compiles to standalone executables for Linux, Android, and Windows — every common architecture. No toolchain needed, no Docker, no cross-compilation setup. One command.
+
+```bash
+ntl binary app.ntl                        # Linux x64 (default)
+ntl binary app.ntl --target android-arm64 # Android
+ntl binary app.ntl --target windows-x64   # Windows
+ntl binary app.ntl --all -o dist/         # every target at once
+```
+
+### All Available Targets
+
+| Platform | Targets |
+|----------|---------|
+| **Linux** | `linux-x64` `linux-arm64` `linux-arm32` `linux-riscv64` `linux-ppc64` `linux-s390x` `linux-mips64` `linux-x86` |
+| **Android** | `android-arm64` `android-arm32` `android-x64` `android-x86` |
+| **Windows** | `windows-x64` `windows-arm64` `windows-x86` |
+| **WebAssembly** | `wasm32` `wasm64` |
+
+```bash
+ntl binary --list-targets   # print all 17 targets with triples
+```
+
+### Modes
+
+**Shell binary** (default) — small, requires Node.js on target:
+```bash
+ntl binary server.ntl -o server --target linux-arm64
+```
+
+**Standalone** — ~55 MB, bundles the Node runtime. Runs with **zero dependencies**:
+```bash
+ntl binary app.ntl -o app --standalone --target android-arm64
+./app                        # runs on any Android with Termux or direct exec
+```
+
+**Build for every target at once:**
+```bash
+ntl binary app.ntl --all -o dist/ --standalone
+# dist/
+#   app_linux_x64
+#   app_linux_arm64
+#   app_android_arm64
+#   app_windows_x64.bat
+#   app_wasm32.wasm
+#   ... 17 total
+```
+
+### How it works
+
+The compiler embeds all used `ntl:` stdlib modules as pre-compiled strings directly into the binary. The binary is fully self-contained at the NTL level — no external NTL installation needed at runtime. The standalone mode additionally bundles the Node.js runtime, making the output run on any machine without any software installed.
+
+### WebAssembly — Real `.wasm`, No Dependencies
+
+NTL compiles to real WebAssembly binary format (`.wasm`) without emscripten, wasi-sdk, or any external toolchain. The compiler writes the WebAssembly binary encoding directly.
+
+```bash
+ntl binary app.ntl -o app --target wasm32
+# → app.wasm  (valid WebAssembly binary, 100% spec-compliant)
+```
+
+The output is a true `.wasm` binary that:
+- Runs in any browser via `WebAssembly.instantiate()`
+- Runs with `wasmtime`, `wasmer`, or `wasm3` on any OS
+- Can be imported as a Web Worker
+- Exports `_start` and `memory` (WASI-compatible)
+
+```javascript
+// Browser / Node.js
+const wasm = await WebAssembly.instantiateStreaming(fetch('app.wasm'));
+wasm.instance.exports._start();
+
+// Node.js (direct)
+const buf = fs.readFileSync('app.wasm');
+const { instance } = await WebAssembly.instantiate(buf);
+instance.exports._start();
+```
+
+```bash
+# CLI runtimes
+wasmtime app.wasm
+wasmer   app.wasm
+wasm3    app.wasm
+node     -e "WebAssembly.instantiate(require('fs').readFileSync('app.wasm')).then(r=>r.instance.exports._start())"
+```
+
+
+## Creating Your Own Modules
+
+NTL has a straightforward module system. Any `.ntl` file is a module. You import with `require()`, and export with `exports.X = X` or `module.exports = { ... }`.
+
+### Basic Module
+
+Create `math-utils.ntl`:
+
+```ntl
+fn add(a, b) { return a + b }
+fn sub(a, b) { return a - b }
+fn clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi) }
+fn lerp(a, b, t) { return a + (b - a) * t }
+
+exports.add   = add
+exports.sub   = sub
+exports.clamp = clamp
+exports.lerp  = lerp
+```
+
+Use it from another file:
+
+```ntl
+val math = require("./math-utils")
+
+log math.add(2, 3)       // 5
+log math.clamp(150, 0, 100) // 100
+log math.lerp(0, 100, 0.5)  // 50
+```
+
+### Class-based Module
+
+Create `logger.ntl`:
+
+```ntl
+class Logger {
+  constructor(prefix) {
+    this.prefix = prefix || "APP"
+    this._level = "info"
+  }
+
+  setLevel(level) { this._level = level; return this }
+
+  info(msg, ...args)  { console.log(`[${this.prefix}] INFO`, msg, ...args) }
+  warn(msg, ...args)  { console.warn(`[${this.prefix}] WARN`, msg, ...args) }
+  error(msg, ...args) { console.error(`[${this.prefix}] ERROR`, msg, ...args) }
+  debug(msg, ...args) {
+    if (this._level === "debug") { console.log(`[${this.prefix}] DEBUG`, msg, ...args) }
+  }
+}
+
+fn createLogger(prefix) { return new Logger(prefix) }
+
+exports.Logger       = Logger
+exports.createLogger = createLogger
+```
+
+### Module with State
+
+Create `counter.ntl`:
+
+```ntl
+var _count = 0
+
+fn increment(by) { _count += (by || 1); return _count }
+fn decrement(by) { _count -= (by || 1); return _count }
+fn reset()       { _count = 0 }
+fn value()       { return _count }
+
+exports.increment = increment
+exports.decrement = decrement
+exports.reset     = reset
+exports.value     = value
+```
+
+### Async Module
+
+Create `api-client.ntl`:
+
+```ntl
+val http = require("ntl:http")
+
+val BASE_URL = "https://api.example.com"
+
+async fn getUser(id) {
+  val res = await http.get(BASE_URL + "/users/" + id)
+  return res.data
+}
+
+async fn createUser(data) {
+  val res = await http.post(BASE_URL + "/users", data)
+  return res.data
+}
+
+async fn updateUser(id, data) {
+  val res = await http.put(BASE_URL + "/users/" + id, data)
+  return res.data
+}
+
+exports.getUser    = getUser
+exports.createUser = createUser
+exports.updateUser = updateUser
+```
+
+### EventEmitter Module
+
+```ntl
+val { EventEmitter } = require("ntl:events")
+
+class TaskQueue extends EventEmitter {
+  constructor() {
+    super()
+    this._queue   = []
+    this._running = false
+  }
+
+  push(task) {
+    this._queue.push(task)
+    this.emit("queued", this._queue.length)
+    if (!this._running) { this._process() }
+    return this
+  }
+
+  async _process() {
+    this._running = true
+    while (this._queue.length > 0) {
+      val task = this._queue.shift()
+      this.emit("start", task)
+      try {
+        val result = await task()
+        this.emit("done", result)
+      } catch (err) {
+        this.emit("error", err)
+      }
+    }
+    this._running = false
+    this.emit("idle")
+  }
+
+  get size() { return this._queue.length }
+}
+
+exports.TaskQueue = TaskQueue
+```
+
+Usage:
+
+```ntl
+val { TaskQueue } = require("./task-queue")
+
+val q = new TaskQueue()
+q.on("done",  result => log "Finished:", result)
+q.on("error", err    => log "Error:", err.message)
+q.on("idle",  ()     => log "All done!")
+
+q.push(async () => {
+  val res = await http.get("https://api.example.com/data")
+  return res.data
+})
+```
+
+### Module Index File
+
+For larger projects, create `index.ntl` to re-export from multiple files:
+
+```ntl
+val db       = require("./db")
+val auth     = require("./auth")
+val mailer   = require("./mailer")
+val logger   = require("./logger")
+
+exports.db     = db
+exports.auth   = auth
+exports.mailer = mailer
+exports.log    = logger.createLogger("APP")
+```
+
+Then anywhere in your project:
+
+```ntl
+val { db, auth, log } = require("./lib")
+```
+
+### NTL Module Rules
+
+| Rule | Detail |
+|------|--------|
+| Declare constants | `val` (like `const`) |
+| Declare variables | `var` (like `let`) |
+| Define functions | `fn myFn(args) { }` |
+| Define classes | `class MyClass { constructor() {} }` |
+| Export single value | `exports.name = value` |
+| Export multiple | `module.exports = { a, b, c }` |
+| Import file | `require("./path/to/file")` |
+| Import built-in | `require("ntl:modulename")` |
+| Import Node.js | `require("fs")`, `require("path")`, etc. |
+| Loops over arrays | `each item in array { }` |
+| Avoid as names | `fn`, `val`, `var`, `each`, `range`, `type`, `init` (reserved) |
+
+### Avoid These Patterns in Object Literals
+
+NTL strips quotes from object literal keys. Use bracket notation for hyphenated keys:
+
+```ntl
+// ❌ Wrong — NTL removes quotes from keys
+val headers = { "Content-Type": "application/json" }  // compiles to: { Content-Type: ... }
+
+// ✅ Correct — use bracket notation
+val headers = {}
+headers["Content-Type"] = "application/json"
+headers["Authorization"] = "Bearer " + token
+
+// ✅ Also correct — single-word keys work fine  
+val options = { method: "POST", body: data }
+```
+
+### Arrow Functions in Objects
+
+Object methods must use arrow syntax:
+
+```ntl
+// ✅ Correct
+val obj = {
+  greet: (name) => "Hello " + name,
+  add:   (a, b) => a + b
+}
+
+// ❌ Wrong — shorthand methods not supported in objects
+val obj = {
+  greet(name) { return "Hello " + name }  // may not work
+}
+
+// ✅ Use classes for methods
+class MyService {
+  greet(name) { return "Hello " + name }   // works in class
+}
+```
+
+---
+
+## 2D Game Development
+
+NTL's built-in game engine supports full 2D and 3D game development with a CPU software rasterizer and optional GPU framebuffer output.
+
+### 2D Sprite Game
+
+```ntl
+val game = require("ntl:game")
+
+class MyGame {
+  constructor() {
+    this.player = { x: 100, y: 300, w: 32, h: 32, vx: 0, vy: 0 }
+    this.gravity = 800
+    this.floor   = 400
+    this.score   = 0
+    this.ui      = new game.UICanvas({ width: 1280, height: 720 })
+  }
+
+  update(dt, input) {
+    // Player movement
+    if (input.left)  { this.player.vx = -200 }
+    if (input.right) { this.player.vx =  200 }
+    if (!input.left && !input.right) { this.player.vx = 0 }
+
+    // Jump
+    if (input.jump && this.player.y >= this.floor) {
+      this.player.vy = -600
+    }
+
+    // Gravity
+    this.player.vy += this.gravity * dt
+    this.player.x  += this.player.vx * dt
+    this.player.y  += this.player.vy * dt
+
+    // Floor collision
+    if (this.player.y >= this.floor) {
+      this.player.y  = this.floor
+      this.player.vy = 0
+    }
+
+    this.score += dt * 10
+  }
+
+  render(ctx) {
+    // Clear
+    ctx.fillRect(0, 0, 1280, 720, "#1a1a2e")
+
+    // Floor
+    ctx.fillRect(0, 432, 1280, 288, "#16213e")
+
+    // Player (colored rectangle as sprite placeholder)
+    ctx.fillRect(this.player.x, this.player.y, this.player.w, this.player.h, "#e94560")
+
+    // Score UI
+    this.ui.text("Score: " + Math.floor(this.score), 20, 30, { color: "#fff", size: 20 })
+  }
+}
+
+game.run(MyGame, { width: 1280, height: 720, fps: 60 })
+```
+
+### 2D Tilemap Game with A* Pathfinding
+
+```ntl
+val game = require("ntl:game")
+val { TileMap } = require("ntl:game/tilemap")
+
+val MAP = [
+  [1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,1,0,0,0,0,1],
+  [1,0,1,0,1,0,1,1,0,1],
+  [1,0,1,0,0,0,0,1,0,1],
+  [1,0,0,0,1,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1]
+]
+
+class DungeonGame {
+  constructor() {
+    this.tilemap = new TileMap(MAP, 64)  // 64px tiles
+    this.player  = { gridX: 1, gridY: 1 }
+    this.enemy   = { gridX: 8, gridY: 4 }
+    this._path   = []
+  }
+
+  update(dt, input) {
+    if (input.pressedThisFrame("w")) { this._movePlayer(0, -1) }
+    if (input.pressedThisFrame("s")) { this._movePlayer(0,  1) }
+    if (input.pressedThisFrame("a")) { this._movePlayer(-1, 0) }
+    if (input.pressedThisFrame("d")) { this._movePlayer( 1, 0) }
+
+    // Enemy chases player with A*
+    this._path = this.tilemap.findPath(
+      this.enemy.gridX, this.enemy.gridY,
+      this.player.gridX, this.player.gridY
+    )
+  }
+
+  _movePlayer(dx, dy) {
+    val nx = this.player.gridX + dx
+    val ny = this.player.gridY + dy
+    if (MAP[ny] && MAP[ny][nx] === 0) {
+      this.player.gridX = nx
+      this.player.gridY = ny
+    }
+  }
+
+  render(ctx) {
+    this.tilemap.render(ctx, {
+      0: "#1a1a2e",  // floor
+      1: "#4a4a6a"   // wall
+    })
+    // Draw player
+    ctx.fillRect(this.player.gridX * 64 + 8, this.player.gridY * 64 + 8, 48, 48, "#e94560")
+    // Draw enemy
+    ctx.fillRect(this.enemy.gridX * 64 + 8, this.enemy.gridY * 64 + 8, 48, 48, "#f5a623")
+  }
+}
+
+game.run(DungeonGame, { width: 640, height: 384, fps: 30 })
+```
+
+### 2D Particle Effects
+
+```ntl
+val game    = require("ntl:game")
+val { ParticleSystem } = require("ntl:game/particles")
+
+class FireworkGame {
+  constructor() {
+    this.particles = new ParticleSystem(5000)  // max 5000 particles
+  }
+
+  update(dt, input) {
+    if (input.pressedThisFrame("space")) {
+      this.particles.emit({
+        x: Math.random() * 1280,
+        y: Math.random() * 720,
+        count:    80,
+        speed:    300,
+        lifetime: 1.5,
+        gravity:  400,
+        colors:   ["#ff6b6b", "#ffd93d", "#6bcb77", "#4d96ff"]
+      })
+    }
+    this.particles.update(dt)
+  }
+
+  render(ctx) {
+    ctx.fillRect(0, 0, 1280, 720, "#0d0d0d")
+    this.particles.render(ctx)
+    ctx.text("Press SPACE for fireworks!", 400, 680, { color: "#555", size: 16 })
+  }
+}
+
+game.run(FireworkGame, { width: 1280, height: 720, fps: 60 })
+```
+
+---
+
+## 3D Game Development
+
+NTL ships a full CPU software rasterizer with optional GPU framebuffer output (`/dev/fb0` on Linux). No GPU driver setup required — it works in a terminal.
+
+### First 3D Scene
+
+```ntl
+val game = require("ntl:game")
+
+class My3DGame {
+  constructor() {
+    this.camera = new game.Camera({
+      fov:      75,
+      near:     0.1,
+      far:      1000,
+      position: { x: 0, y: 2, z: 5 }
+    })
+
+    this.renderer = new game.Renderer3D({
+      width:  1280,
+      height: 720,
+      shading: "phong"     // "flat" | "phong" | "wireframe"
+    })
+
+    this.scene  = new game.Scene()
+    this.clock  = new game.Clock()
+
+    // Add a cube
+    val cube = game.createCube({ size: 2, color: [0.8, 0.3, 0.3] })
+    cube.position = { x: 0, y: 1, z: 0 }
+    this.scene.add(cube)
+    this.cube = cube
+
+    // Add a plane
+    val floor = game.createPlane({ width: 20, height: 20, color: [0.3, 0.6, 0.3] })
+    floor.position = { x: 0, y: 0, z: 0 }
+    this.scene.add(floor)
+
+    // Lighting
+    this.scene.addLight({ kind: "directional", direction: [-1, -2, -1], intensity: 1.0 })
+    this.scene.addLight({ kind: "ambient", intensity: 0.3 })
+
+    this.display = game.createDisplay(1280, 720)
+  }
+
+  update(dt, input) {
+    // Rotate the cube
+    this.cube.rotation.y += dt * 1.2
+    this.cube.rotation.x += dt * 0.5
+
+    // WASD camera movement
+    val speed = 5 * dt
+    if (input.w) { this.camera.moveForward(speed) }
+    if (input.s) { this.camera.moveForward(-speed) }
+    if (input.a) { this.camera.moveRight(-speed) }
+    if (input.d) { this.camera.moveRight(speed) }
+
+    // Mouse look
+    if (input.mouse.dx !== 0 || input.mouse.dy !== 0) {
+      this.camera.rotateYaw(input.mouse.dx * 0.002)
+      this.camera.rotatePitch(input.mouse.dy * 0.002)
+    }
+  }
+
+  render() {
+    this.renderer.clear()
+    this.scene.render(this.renderer, this.camera)
+    this.display.flush(this.renderer.buffer, 1280, 720)
+  }
+}
+
+game.run(My3DGame, { width: 1280, height: 720, fps: 60 })
+```
+
+### 3D FPS Game (Raycaster)
+
+```ntl
+val game = require("ntl:game")
+val { Raycaster } = require("ntl:game/raycasting")
+
+val MAP = [
+  [1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,1],
+  [1,0,1,1,0,1,0,1],
+  [1,0,0,0,0,0,0,1],
+  [1,0,1,0,1,1,0,1],
+  [1,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1]
+]
+
+class FPSGame {
+  constructor() {
+    this.raycaster = new Raycaster(MAP, { width: 1280, height: 720, fov: 66 })
+    this.player    = { x: 2.5, y: 2.5, angle: 0 }
+    this.display   = game.createDisplay(1280, 720)
+    this.ui        = new game.UICanvas({ width: 1280, height: 720 })
+  }
+
+  update(dt, input) {
+    val speed    = 3 * dt
+    val turnSpeed = 2.5 * dt
+
+    if (input.left)  { this.player.angle -= turnSpeed }
+    if (input.right) { this.player.angle += turnSpeed }
+
+    val dx = Math.cos(this.player.angle) * speed
+    val dy = Math.sin(this.player.angle) * speed
+
+    if (input.up) {
+      val nx = this.player.x + dx
+      val ny = this.player.y + dy
+      if (MAP[Math.floor(ny)][Math.floor(nx)] === 0) {
+        this.player.x = nx
+        this.player.y = ny
+      }
+    }
+    if (input.down) {
+      val nx = this.player.x - dx
+      val ny = this.player.y - dy
+      if (MAP[Math.floor(ny)][Math.floor(nx)] === 0) {
+        this.player.x = nx
+        this.player.y = ny
+      }
+    }
+  }
+
+  render() {
+    val frame = this.raycaster.render(this.player.x, this.player.y, this.player.angle)
+    // Crosshair
+    this.ui.fillRect(638, 358, 4, 4, "#ffffff")
+    // Mini-map
+    this.ui.drawMinimap(MAP, this.player, { x: 10, y: 10, scale: 12 })
+    this.display.flush(frame, 1280, 720)
+  }
+}
+
+game.run(FPSGame, { width: 1280, height: 720, fps: 60 })
+```
+
+### 3D Terrain Game
+
+```ntl
+val game    = require("ntl:game")
+val { ProceduralTerrain } = require("ntl:game/terrain")
+
+class TerrainExplorer {
+  constructor() {
+    this.camera   = new game.Camera({ fov: 80, position: { x: 0, y: 30, z: 0 } })
+    this.renderer = new game.Renderer3D({ width: 1280, height: 720, shading: "phong" })
+    this.scene    = new game.Scene()
+    this.display  = game.createDisplay(1280, 720)
+
+    val terrain = new ProceduralTerrain({
+      seed:        42,
+      size:        256,
+      heightScale: 40,
+      waterLevel:  8,
+      octaves:     6
+    })
+    this.scene.add(terrain.mesh)
+    this.scene.addLight({ kind: "directional", direction: [-1, -3, -1], intensity: 1.2 })
+    this.scene.addLight({ kind: "ambient", intensity: 0.4 })
+
+    this.yaw   = 0
+    this.pitch = -0.4
+  }
+
+  update(dt, input) {
+    val speed = 20 * dt
+    if (input.w) { this.camera.moveForward(speed) }
+    if (input.s) { this.camera.moveForward(-speed) }
+    if (input.a) { this.camera.moveRight(-speed) }
+    if (input.d) { this.camera.moveRight(speed) }
+    if (input.left)  { this.yaw -= dt * 1.5 }
+    if (input.right) { this.yaw += dt * 1.5 }
+    this.camera.setRotation(this.pitch, this.yaw)
+  }
+
+  render() {
+    this.renderer.clear()
+    this.scene.render(this.renderer, this.camera)
+    this.display.flush(this.renderer.buffer, 1280, 720)
+  }
+}
+
+game.run(TerrainExplorer, { width: 1280, height: 720, fps: 60 })
+```
+
+### 3D Physics Simulation
+
+```ntl
+val game = require("ntl:game")
+val { PhysicsWorld } = require("ntl:game/physics")
+
+class PhysicsDemo {
+  constructor() {
+    this.camera   = new game.Camera({ fov: 75, position: { x: 0, y: 5, z: 15 } })
+    this.renderer = new game.Renderer3D({ width: 1280, height: 720 })
+    this.scene    = new game.Scene()
+    this.display  = game.createDisplay(1280, 720)
+    this.physics  = new PhysicsWorld({ gravity: -9.81 })
+
+    // Floor
+    val floor    = game.createPlane({ width: 30, height: 30, color: [0.4, 0.4, 0.4] })
+    val floorBody = this.physics.addStatic(floor, { restitution: 0.5 })
+    this.scene.add(floor)
+
+    // Spawn boxes
+    this.boxes = []
+    var i = 0
+    while (i < 15) {
+      val box  = game.createCube({ size: 1, color: [Math.random(), Math.random(), Math.random()] })
+      box.position = { x: (Math.random() - 0.5) * 10, y: 10 + i * 1.5, z: (Math.random() - 0.5) * 10 }
+      val body = this.physics.addRigidBody(box, { mass: 1, restitution: 0.3 })
+      this.scene.add(box)
+      this.boxes.push({ mesh: box, body })
+      i++
+    }
+
+    this.scene.addLight({ kind: "directional", direction: [-1, -2, -1], intensity: 1.0 })
+    this.scene.addLight({ kind: "ambient", intensity: 0.35 })
+  }
+
+  update(dt) {
+    this.physics.step(dt)
+  }
+
+  render() {
+    this.renderer.clear()
+    this.scene.render(this.renderer, this.camera)
+    this.display.flush(this.renderer.buffer, 1280, 720)
+  }
+}
+
+game.run(PhysicsDemo, { width: 1280, height: 720, fps: 60 })
+```
+
+### Game Engine Module Reference
+
+| Module | Import | What It Does |
+|--------|--------|-------------|
+| Core runner | `require("ntl:game")` | `game.run()`, `Camera`, `Scene`, `Clock`, mesh builders |
+| 3D Renderer | `require("ntl:game")` | `.Renderer3D` — Phong shading, z-buffer, up to 2K |
+| Display | `require("ntl:game")` | `createDisplay()` — framebuffer / terminal / BMP |
+| 2D UI | `require("ntl:game")` | `UICanvas` — text, rectangles, HUD drawing |
+| Physics | `require("ntl:game/physics")` | `PhysicsWorld`, `RigidBody`, collision, impulse |
+| Particles | `require("ntl:game/particles")` | `ParticleSystem` — burst, trail, gravity |
+| Raycaster | `require("ntl:game/raycasting")` | Wolf3D-style FPS renderer |
+| Tilemap | `require("ntl:game/tilemap")` | 2D grid, A* pathfinding, chunked rendering |
+| Terrain | `require("ntl:game/terrain")` | Procedural heightmap, multi-octave noise |
+| Animation | `require("ntl:game/animation")` | Skeletal, keyframe, blend trees |
+| Camera | `require("ntl:game")` | FPS, orbit, follow, cinematic modes |
+| Tweens | `require("ntl:game/tweens")` | Easing, chaining, parallel sequences |
+| Audio | `require("ntl:game")` | Positional audio, music, sound effects |
+| Input | `require("ntl:game")` | Keyboard, mouse, gamepad, touch |
+| Debug | `require("ntl:game/debug")` | FPS counter, profiler, wireframe overlay |
+
+**Resolution:** default **1280×720 (720p)**, max **2560×1440 (2K)**. Set with `game.run(MyGame, { width: 1920, height: 1080 })`.
+
+---
+
+## Real-World Systems
+
+NTL handles real production workloads. Here are complete system patterns.
+
+### REST API with Auth and Database
+
+```ntl
+val http   = require("ntl:http")
+val db     = require("ntl:db")
+val crypto = require("ntl:crypto")
+val cache  = require("ntl:cache")
+
+val database = db.connect("./app.db")
+
+database.createTable("users", t => {
+  t.id()
+  t.text("email",    { unique: true })
+  t.text("password_hash")
+  t.text("role",     { default: "user" })
+  t.timestamps()
+})
+
+val Users = database.model("users", { timestamps: true })
+
+val router = new http.Router()
+
+router.use(http.cors({ origin: ["https://myapp.com"] }))
+router.use(http.rateLimit({ windowMs: 60000, max: 100 }))
+
+async fn requireAuth(req, res, next) {
+  val token = (req.headers["authorization"] || "").replace("Bearer ", "")
+  if (!token) { return res.status(401).json({ error: "Unauthorized" }) }
+  val payload = crypto.verifyJWT(token, process.env.JWT_SECRET)
+  if (!payload) { return res.status(401).json({ error: "Invalid token" }) }
+  req.user = payload
+  next()
+}
+
+router.post("/auth/register", async (req, res) => {
+  val { email, password } = req.body
+  if (!email || !password) { return res.status(400).json({ error: "Email and password required" }) }
+  val existing = Users.findBy("email", email)
+  if (existing) { return res.status(409).json({ error: "Email already registered" }) }
+  val hash = await crypto.hashPassword(password)
+  val user = Users.create({ email, password_hash: hash, role: "user" })
+  val token = crypto.signJWT({ id: user.id, email, role: user.role }, process.env.JWT_SECRET, "7d")
+  res.status(201).json({ token, user: { id: user.id, email, role: user.role } })
+})
+
+router.post("/auth/login", async (req, res) => {
+  val { email, password } = req.body
+  val user = Users.findBy("email", email)
+  if (!user) { return res.status(401).json({ error: "Invalid credentials" }) }
+  val ok = await crypto.verifyPassword(password, user.password_hash)
+  if (!ok)   { return res.status(401).json({ error: "Invalid credentials" }) }
+  val token = crypto.signJWT({ id: user.id, email, role: user.role }, process.env.JWT_SECRET, "7d")
+  res.json({ token })
+})
+
+router.get("/users/me", requireAuth, (req, res) => {
+  val user = Users.find(req.user.id)
+  res.json(user)
+})
+
+router.get("/users", requireAuth, (req, res) => {
+  if (req.user.role !== "admin") { return res.status(403).json({ error: "Admin only" }) }
+  val page  = parseInt(req.query.page  || "1")
+  val limit = parseInt(req.query.limit || "20")
+  val result = Users.paginate(page, limit)
+  res.json(result)
+})
+
+http.listen(3000, router, () => log "API running at http://localhost:3000")
+```
+
+### Real-Time Chat Server (WebSocket)
+
+```ntl
+val http = require("ntl:http")
+val ws   = require("ntl:ws")
+
+val router  = new http.Router()
+val wss     = new ws.WebSocketServer()
+val rooms   = new Map()
+
+router.get("/", (req, res) => {
+  res.html("<h1>NTL Chat</h1><p>Connect via WebSocket on /ws</p>")
+})
+
+wss.attach(http.createServer(router))
+
+wss.on("connection", (client) => {
+  log "Client connected:", client.id
+
+  client.on("message", (msg) => {
+    if (!msg || !msg.type) { return }
+
+    if (msg.type === "join") {
+      wss.join(client, msg.room)
+      client.room = msg.room
+      client.name = msg.name || "Anonymous"
+      wss.to(msg.room).sendJSON({ type: "system", text: client.name + " joined" })
+    }
+
+    if (msg.type === "chat" && client.room) {
+      wss.to(client.room).sendJSON({
+        type: "chat",
+        name: client.name,
+        text: msg.text,
+        time: Date.now()
+      })
+    }
+  })
+
+  client.on("close", () => {
+    if (client.room) {
+      wss.leave(client, client.room)
+      wss.to(client.room).sendJSON({ type: "system", text: client.name + " left" })
+    }
+  })
+})
+
+http.listen(3000, router, () => log "Chat server at http://localhost:3000")
+```
+
+### Background Job Queue
+
+```ntl
+val { EventEmitter } = require("ntl:events")
+val db     = require("ntl:db")
+val logger = require("ntl:logger")
+
+val log = logger.createLogger("JOBS")
+
+class JobQueue extends EventEmitter {
+  constructor(name, options) {
+    super()
+    this.name      = name
+    this._db       = db.connect("./jobs.db")
+    this._interval = (options || {}).pollMs || 1000
+    this._handlers = new Map()
+    this._running  = false
+
+    this._db.createTable("jobs_" + name, t => {
+      t.id()
+      t.text("jobType")
+      t.text("payload",   { default: "{}" })
+      t.text("status",    { default: "pending" })
+      t.integer("attempts", { default: 0 })
+      t.text("error",     { nullable: true })
+      t.timestamps()
+    })
+  }
+
+  handle(jobType, handlerFn) {
+    this._handlers.set(jobType, handlerFn)
+    return this
+  }
+
+  async enqueue(jobType, payload) {
+    return this._db.table("jobs_" + this.name).insert({
+      jobType,
+      payload: JSON.stringify(payload || {})
+    })
+  }
+
+  start() {
+    if (this._running) { return }
+    this._running = true
+    this._poll()
+    log.info("Queue started:", this.name)
+    return this
+  }
+
+  stop() { this._running = false; return this }
+
+  async _poll() {
+    while (this._running) {
+      val job = this._db.table("jobs_" + this.name).where("status", "=", "pending").orderBy("id").first()
+      if (job) {
+        await this._process(job)
+      } else {
+        await new Promise(res => setTimeout(res, this._interval))
+      }
+    }
+  }
+
+  async _process(job) {
+    this._db.table("jobs_" + this.name).where("id", "=", job.id).update({ status: "running" })
+    try {
+      val handler = this._handlers.get(job.jobType)
+      if (!handler) { throw new Error("No handler for job type: " + job.jobType) }
+      await handler(JSON.parse(job.payload))
+      this._db.table("jobs_" + this.name).where("id", "=", job.id).update({ status: "done" })
+      this.emit("done", job)
+      log.info("Job done:", job.jobType, job.id)
+    } catch (err) {
+      val attempts = job.attempts + 1
+      val status   = attempts >= 3 ? "failed" : "pending"
+      this._db.table("jobs_" + this.name).where("id", "=", job.id).update({
+        status, attempts, error: err.message
+      })
+      this.emit("error", job, err)
+      log.error("Job failed:", job.jobType, err.message)
+    }
+  }
+}
+
+val queue = new JobQueue("emails")
+
+queue.handle("send-welcome", async (payload) => {
+  val mail = require("ntl:mail")
+  val smtp = new mail.SMTPClient({ host: "smtp.example.com", port: 587, user: "no-reply@example.com", pass: process.env.SMTP_PASS })
+  await smtp.send({ to: payload.email, subject: "Welcome!", html: "<h1>Welcome to our app!</h1>" })
+})
+
+queue.start()
+
+// Enqueue a job from elsewhere:
+// await queue.enqueue("send-welcome", { email: "user@example.com" })
+```
+
+### CLI Tool
+
+```ntl
+val fs     = require("ntl:fs")
+val crypto = require("ntl:crypto")
+
+val args    = process.argv.slice(2)
+val command = args[0]
+
+val COMMANDS = {
+  init:    cmdInit,
+  hash:    cmdHash,
+  encrypt: cmdEncrypt,
+  decrypt: cmdDecrypt,
+  help:    cmdHelp
+}
+
+fn cmdInit() {
+  val projectName = args[1] || "my-app"
+  fs.mkdir("./" + projectName)
+  fs.mkdir("./" + projectName + "/src")
+  fs.writeJson("./" + projectName + "/ntl.json", {
+    name:    projectName,
+    version: "1.0.0",
+    entry:   "src/main.ntl"
+  })
+  fs.write("./" + projectName + "/src/main.ntl", 'log "Hello from " + "' + projectName + '"')
+  log "Created project:", projectName
+}
+
+fn cmdHash() {
+  val input = args[1]
+  if (!input) { log "Usage: mytool hash <input>"; process.exit(1) }
+  log "SHA-256:", crypto.sha256(input)
+  log "MD5:    ", crypto.md5(input)
+}
+
+async fn cmdEncrypt() {
+  val file = args[1]; val key = args[2]
+  if (!file || !key) { log "Usage: mytool encrypt <file> <key>"; process.exit(1) }
+  val data = fs.read(file)
+  val enc  = crypto.aesEncrypt(data, key)
+  fs.write(file + ".enc", enc)
+  log "Encrypted:", file + ".enc"
+}
+
+async fn cmdDecrypt() {
+  val file = args[1]; val key = args[2]
+  if (!file || !key) { log "Usage: mytool decrypt <file.enc> <key>"; process.exit(1) }
+  val data = fs.read(file)
+  val dec  = crypto.aesDecrypt(data, key)
+  fs.write(file.replace(".enc", ".dec"), dec)
+  log "Decrypted:", file.replace(".enc", ".dec")
+}
+
+fn cmdHelp() {
+  log "Usage: mytool <command> [args]"
+  log "Commands: init, hash, encrypt, decrypt, help"
+}
+
+val handler = COMMANDS[command]
+if (handler) {
+  val result = handler()
+  if (result && typeof result.then === "function") {
+    result.catch(e => { log "Error:", e.message; process.exit(1) })
+  }
+} else {
+  log "Unknown command:", command
+  cmdHelp()
+  process.exit(1)
+}
+```
+
 
 ---
 
@@ -1350,6 +2738,8 @@ fake.clear()
 
 ### ntl:fs
 
+> **Implemented using raw OS bindings** — does not use Node.js `require('fs')` internally. Uses `process.binding('fs')` directly for maximum portability and minimal overhead.
+
 ```ntl
 val fs = require("ntl:fs")
 
@@ -1537,58 +2927,419 @@ web.parseQs("?page=2&q=ntl+lang")  // {page:"2", q:"ntl lang"}
 
 ### ntl:game
 
-```ntl
-val {Vec2, Vec3, Rect, Color, Camera2D, GameLoop, Input, EntityManager, StateMachine, math} = require("ntl:game")
+NTL ships with a production-grade 3D game engine — written entirely in NTL, zero external dependencies.
+The engine targets GPU-accelerated rendering as the primary path: pixels are written directly to the GPU framebuffer via `/dev/fb0`, giving you hardware-backed output with no browser, no Electron, no Vulkan boilerplate. A high-fidelity CPU software rasterizer serves as the fallback and offline-render path, delivering full Phong shading, per-pixel specular, and correct perspective. Maximum supported resolution is **2K (2560×1440)**. Default resolution is **720p (1280×720)**.
 
-// Vectors
-val v = new Vec2(3, 4)
-v.add(new Vec2(1, 1))
-v.normalize()
-v.distance(other)
-v.lerp(target, 0.1)
-Vec2.zero(); Vec2.up(); Vec2.right()
+The result: **a game engine that runs in a terminal, on Android (Termux), on embedded Linux, on a Raspberry Pi, or as a headless renderer — and still produces better-looking output than most Node.js game libraries.**
 
-// Color
-val red  = new Color(1, 0, 0)
-val hex  = Color.fromHex("#FF5733")
-red.lerp(Color.blue(), 0.5)
-red.withAlpha(0.5)
+**Source layout** (`modules/ntl/game/`):
 
-// Game Loop
-val loop = new GameLoop({
-  fps:           60,
-  onUpdate:      (dt) => { updateLogic(dt) },
-  onFixedUpdate: (dt) => { physics(dt) },
-  onRender:      (alpha) => { draw(alpha) }
-})
-loop.start()
-
-// ECS
-val ecs = new EntityManager()
-val id  = ecs.create({position: {x:0, y:0}, health: {hp: 100}})
-val all = ecs.query("position", "health")
-for val entity of all {
-  entity.components.position.x += 1
-}
-
-// State Machine
-val fsm = new StateMachine({
-  menu:   {enter: showMenu, update: updateMenu, exit: hideMenu},
-  game:   {enter: startGame, update: updateGame},
-  paused: {enter: pauseGame}
-}, "menu")
-fsm.transition("game")
-fsm.update(dt)
-
-// Math utilities
-math.clamp(15, 0, 10)
-math.lerp(0, 100, 0.5)
-math.randInt(1, 6)
-math.shuffle([1,2,3,4,5])
-math.deg2rad(180)
+```
+ntl/game/
+├── core/
+│   ├── math3d.ntl       Vec3, Vec4, Mat4, Quaternion, math utilities
+│   ├── color.ntl        Color — HDR, HSL, hex, lerp, alpha
+│   └── geometry.ntl     Mesh, Geometry — cube/sphere/plane/cylinder/cone/torus/custom
+├── rendering/
+│   ├── renderer.ntl     Renderer3D — GPU framebuffer + GPU-accelerated renderer, z-buffer, Phong shading
+│   └── display.ntl      FramebufferDisplay (GPU), TerminalDisplay (ANSI), FileDisplay (BMP)
+├── scene/
+│   ├── scene.ntl        Scene graph, SceneNode, Camera3D, Light, Material, Transform3D
+│   └── camera.ntl       FPSController, OrbitController, FollowController, FlyController, CameraShake
+├── physics/
+│   └── physics.ntl      PhysicsWorld, RigidBody, BoxCollider, SphereCollider, impulse resolution
+├── input/
+│   └── input.ntl        InputSystem — raw keyboard, WASD, axes, mouse, callbacks
+├── audio/
+│   └── audio.ntl        AudioSystem, AudioTone (procedural WAV generator)
+├── ui/
+│   └── ui.ntl           UICanvas, Panel, Label, Button, ProgressBar, Slider, Checkbox, TextInput
+├── fx/
+│   ├── tween.ntl        TweenManager, Tween, 24 Easing functions
+│   ├── particles.ntl    ParticleEmitter, ParticleSystem, fire/smoke/explosion presets
+│   └── animation.ntl    AnimationClip, AnimationTrack, Animator, AnimationStateMachine
+├── world/
+│   └── tilemap.ntl      Tilemap (grid + A* pathfinding), Heightmap (procedural noise terrain)
+├── utils/
+│   ├── raycast.ntl      Ray, Raycaster, AABB — screen-to-world, mesh picking
+│   └── debug.ntl        DebugDraw (3D lines/boxes/spheres), FPS graph, Profiler
+└── engine/
+    ├── activity.ntl     Activity lifecycle base class
+    └── engine.ntl       GameEngine, fixed-timestep loop, run() entrypoint
 ```
 
 ---
+
+#### Getting started
+
+```ntl
+val game = require("ntl:game")
+
+class MyGame extends game.Activity {
+  fn onCreate() {
+    this._cam = this.scene.camera
+    this._orbit = new game.OrbitController(this._cam, { distance: 8 })
+    this.addLight("directional", -0.5, -1, -0.7, 255, 245, 220, 1.3)
+
+    val mat  = new game.Material({ r: 60, g: 130, b: 240, shininess: 80 })
+    val mesh = game.Geometry.cube(1.5)
+    this._cube = new game.SceneNode({ mesh, material: mat })
+    this.scene.add(this._cube)
+
+    this._ui  = new game.UICanvas({ width: 1280, height: 720 })
+    this._ui.attachInput(this.input)
+    val panel = this._ui.createPanel(10, 10, 220, 100, { radius: 8 })
+    this._hp  = new game.ProgressBar({ x: 10, y: 20, w: 190, h: 18, value: 1.0, label: "HP" })
+    panel.add(this._hp)
+
+    this._tw  = new game.TweenManager()
+    this._fire = game.fireEmitter(0, 2, 0)
+  }
+
+  fn onUpdate(dt) {
+    this._orbit.update(this.input, dt)
+    this._tw.update(dt)
+    this._fire.update(dt)
+    this._ui.update(this.input)
+    if (this.input.wasPressed("Escape")) { this.quit() }
+  }
+
+  fn onRender() {
+    this.scene.render(this.renderer)
+    this._fire.render(this.renderer, this.scene.camera)
+    this._ui.attachRenderer(this.renderer.buffer, this.renderer.width, this.renderer.height)
+    this._ui.render()
+    this.display.flush(this.renderer.buffer, this.renderer.width, this.renderer.height)
+  }
+}
+
+game.run(MyGame, { width: 1280, height: 720, fps: 60 })
+```
+
+Run with: `ntl run game.ntl`
+
+---
+
+#### Activity lifecycle
+
+| Method | When it fires |
+|---|---|
+| `onCreate()` | Engine initialized. Build your scene here. |
+| `onStart()` | After onCreate, before first frame. |
+| `onResume()` | After pause resumes. |
+| `onUpdate(dt)` | Every frame. `dt` is delta time in seconds. |
+| `onRender()` | Every frame, after update. Write your render calls here. |
+| `onPause()` | Game paused. |
+| `onStop()` | Engine stopping. |
+| `onDestroy()` | Final cleanup. |
+
+#### Built-in subsystems on `this.*`
+
+| Property | Type | Description |
+|---|---|---|
+| `this.scene` | `Scene` | 3D scene graph |
+| `this.renderer` | `Renderer3D` | GPU/GPU-accelerated renderer |
+| `this.display` | `Display` | Output backend (GPU fb / terminal / file) |
+| `this.input` | `InputSystem` | Keyboard + mouse |
+| `this.audio` | `AudioSystem` | Audio playback |
+| `this.physics` | `PhysicsWorld` | Rigid body simulation |
+| `this.engine` | `GameEngine` | Engine state, FPS, frame count |
+
+---
+
+#### Rendering — GPU-first, CPU fallback
+
+NTL's renderer writes directly to the Linux GPU framebuffer (`/dev/fb0`) — no windowing system, no driver overhead. On systems without a framebuffer, it falls back to a full CPU software rasterizer with per-pixel Phong shading and a hardware-quality result. Both paths share the same API.
+
+```ntl
+fn onRender() {
+  this.scene.render(this.renderer)
+  this.display.flush(this.renderer.buffer, this.renderer.width, this.renderer.height)
+}
+```
+
+Display auto-detection priority: `GPU framebuffer → ANSI terminal → BMP file`.
+
+**Resolution:** default **1280×720 (720p)**, configurable up to **2560×1440 (2K)**. Higher resolutions require adequate GPU framebuffer memory.
+
+The `Renderer3D` supports:
+- Full triangle rasterization with barycentric coordinates
+- Z-buffer depth testing and backface culling
+- Per-pixel Phong shading: ambient + diffuse + specular
+- Perspective-correct normal and position interpolation
+- Directional and point lights with distance attenuation
+- Skybox gradient background
+- Render statistics: triangles, draw calls, frame time
+
+---
+
+#### Camera controllers
+
+Five ready-to-use camera modes. Attach any one per frame, swap at runtime.
+
+```ntl
+val cam = this.scene.camera
+
+val orbit = new game.OrbitController(cam, {
+  distance: 8,
+  minDist: 2, maxDist: 50,
+  phi: 0.8,
+  rotateSpeed: 0.005
+})
+orbit.update(this.input, dt)
+
+val fps = new game.FPSController(cam, {
+  moveSpeed: 5.0,
+  sprintMult: 2.5,
+  jumpForce: 5.0,
+  eyeHeight: 1.7
+})
+fps.setPosition(0, 1.7, 5)
+fps.update(this.input, dt)
+
+val follow = new game.FollowController(cam, {
+  target: this._player,
+  offset: { x: 0, y: 3, z: 6 },
+  smoothSpeed: 5.0
+})
+follow.update(this.input, dt)
+
+val fly = new game.FlyController(cam, { speed: 8, fastSpeed: 25 })
+fly.update(this.input, dt)
+
+val shake = new game.CameraShake(cam)
+shake.shake(0.3, 0.5)
+shake.update(dt)
+```
+
+---
+
+#### UI — pixel-perfect, rendered on GPU
+
+The UI system renders directly into the pixel buffer — no DOM, no canvas, no dependencies. Every widget is anti-aliased, composited with alpha, and interactive.
+
+```ntl
+val ui = new game.UICanvas({ width: 1280, height: 720 })
+ui.attachInput(this.input)
+
+val panel = ui.createPanel(x, y, w, h, {
+  r: 20, g: 20, b: 35, alpha: 200, radius: 8, border: true
+})
+
+val lbl = new game.Label({ x: 10, y: 10, text: "Score: 0",
+  r: 255, g: 255, b: 100, scale: 2, align: "center", w: 200 })
+panel.add(lbl)
+lbl.setText("Score: 100")
+
+val btn = new game.Button({ x: 10, y: 50, w: 180, h: 36, label: "Play" })
+btn.onClick((b) => { log "clicked!" })
+panel.add(btn)
+
+val hp = new game.ProgressBar({ x: 10, y: 100, w: 200, h: 18,
+  value: 0.8, fgR: 60, fgG: 200, fgB: 80, label: "HP" })
+hp.setValue(0.5)
+
+val vol = new game.Slider({ x: 10, y: 130, w: 200,
+  minVal: 0, maxVal: 1, value: 0.8, label: "Volume" })
+
+val snd = new game.Checkbox({ x: 10, y: 160, label: "Sound" })
+
+val inp = new game.TextInput({ x: 10, y: 190, w: 200, placeholder: "Enter name..." })
+
+ui.update(this.input)
+
+ui.attachRenderer(this.renderer.buffer, w, h)
+ui.render()
+```
+
+---
+
+#### Tweens & Easing
+
+24 easing functions. Chainable. Yoyo, loop, delay, onDone callbacks.
+
+```ntl
+val tm = new game.TweenManager()
+
+tm.to(node.transform.position, { x: 5, y: 2, z: 0 }, 1.5, game.Easing.easeOutCubic)
+tm.to(material, { r: 255, g: 0 }, 0.3, game.Easing.easeIn)
+
+val t = tm.to(obj, { x: 100 }, 0.8, game.Easing.bounce)
+         .yoyo()
+         .onDone((o) => { log "done" })
+
+tm.update(dt)
+```
+
+**All easing functions:** `linear`, `easeIn/Out/InOut`, `easeInOutCubic`, `easeInOutQuart`, `easeInOutQuint`, `easeInOutSine`, `easeInOutExpo`, `easeInOutCirc`, `bounce`, `elastic`, `elasticOut`, `back`, `backOut`, `steps(n)`
+
+---
+
+#### Particles
+
+```ntl
+val fire  = game.fireEmitter(x, y, z)
+val smoke = game.smokeEmitter(x, y, z)
+val expl  = game.explosionBurst(x, y, z, strength)
+
+val em = new game.ParticleEmitter({
+  x: 0, y: 0, z: 0,
+  emitRate: 40, maxParticles: 500,
+  lifeMin: 0.5, lifeMax: 2.0,
+  speedMin: 2,  speedMax: 6,
+  sizeStart: 8, sizeEnd: 0,
+  startR: 255, startG: 200, startB: 50,
+  endR: 200,   endG: 40,   endB: 0,
+  gravity: -3, drag: 0.97,
+  spreadX: 0.4
+})
+
+em.burst(100)
+em.setPosition(x, y, z)
+em.setDirection(0, 1, 0)
+
+em.update(dt)
+em.render(renderer, camera)
+```
+
+---
+
+#### Raycasting
+
+```ntl
+val rc = new game.Raycaster()
+
+rc.setFromScreen(camera, mouseX, mouseY, screenW, screenH)
+rc.setFromCamera(camera, 0, 0)
+
+val groundHit = rc.intersectGround(0)
+val boxHit    = rc.intersectAABB(new game.AABB(-1,-1,-1, 1,1,1))
+val sphereHit = rc.intersectSphere(cx, cy, cz, radius)
+val hits      = rc.intersectNodes([node1, node2, node3])
+
+if (hits.length > 0) {
+  val node = hits[0].node
+  val dist = hits[0].hit.t
+}
+```
+
+---
+
+#### Physics
+
+```ntl
+val world = new game.PhysicsWorld()
+world.gravity = -9.8
+
+val body = world.createBody({
+  x: 0, y: 5, z: 0,
+  mass: 1.0,
+  restitution: 0.6,
+  friction: 0.3,
+  collider: new game.SphereCollider(0.5)
+})
+
+body.applyForce(0, 200, 0)
+body.applyImpulse(5, 0, 0)
+
+world.step(dt)
+node.setPosition(body.x, body.y, body.z)
+```
+
+---
+
+#### Tilemap & Terrain
+
+```ntl
+val map = new game.Tilemap(cols, rows, tileSize)
+map.fill(1)
+map.fillRect(col, row, w, h, id)
+map.set(col, row, 0)
+val path = map.pathfind(c0, r0, c1, r1)
+val mesh = map.buildMesh()
+
+val terrain = new game.Heightmap(cols, rows, scale, maxHeight)
+terrain.generateNoise(octaves, persistence, lacunarity, seed)
+val y    = terrain.heightAt(worldX, worldZ)
+val mesh = terrain.buildMesh()
+```
+
+---
+
+#### Animation
+
+```ntl
+val animator = new game.Animator(node)
+
+val clip  = animator.createClip("walk", { loop: true })
+val track = clip.addTrack("transform.position.y")
+track.addKey(0.0, 0.0, game.Easing.easeInOut)
+track.addKey(0.5, 0.4)
+track.addKey(1.0, 0.0)
+
+animator.play("walk")
+animator.update(dt)
+
+val sm = new game.AnimationStateMachine(animator)
+sm.addState("idle", "idle_clip", { loop: true })
+sm.addState("run",  "run_clip",  { loop: true })
+sm.addTransition("idle", "run",  (p) => p["speed"] > 0.1)
+sm.addTransition("run",  "idle", (p) => p["speed"] <= 0.1)
+sm.setInitial("idle")
+sm.setParam("speed", velocity)
+sm.update(dt)
+```
+
+---
+
+#### Input
+
+```ntl
+val inp = this.input
+
+inp.isDown("W")
+inp.wasPressed("Space")
+inp.wasReleased("Enter")
+
+inp.getAxis("Horizontal")
+inp.getAxis("Vertical")
+
+inp.mouseX; inp.mouseY; inp.mouseDX; inp.mouseDY
+inp.mouseButton(0)
+
+inp.on("keydown", (key) => { ... })
+inp.on("mousedown", (btn, x, y) => { ... })
+```
+
+---
+
+#### Debug & Profiling
+
+```ntl
+val dbg = new game.DebugDraw(renderer, uiRenderer)
+
+dbg.line(x0,y0,z0, x1,y1,z1, r,g,b)
+dbg.box(cx,cy,cz, sx,sy,sz, r,g,b)
+dbg.sphere(cx,cy,cz, radius, r,g,b)
+dbg.text3d(x,y,z, "label", r,g,b)
+dbg.drawAxes(0, 0, 0, 2)
+dbg.drawGrid(0, 10, 1)
+dbg.drawFpsGraph(x, y, w, h)
+dbg.render(camera)
+
+val prof = new game.Profiler()
+prof.mark("physics")
+  world.step(dt)
+prof.measure("physics")
+prof.report()
+```
+
+---
+
+#### Full example
+
+See `examples/game3d_full.ntl` for a complete demo using every system: orbital camera, physics ball, fire particles, UI with buttons/sliders/checkboxes, tweened animations, tilemap, heightmap terrain, and debug overlay — all in one file, running at 60fps.
+
 
 ### ntl:android
 

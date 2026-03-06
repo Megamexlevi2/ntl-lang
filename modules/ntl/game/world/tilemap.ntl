@@ -1,0 +1,268 @@
+class Tilemap {
+  constructor(cols, rows, tileSize) {
+    this.cols     = cols     || 16
+    this.rows     = rows     || 16
+    this.tileSize = tileSize || 1
+    this._tiles   = new Array(cols * rows).fill(0)
+    this._meta    = new Map()
+    this._dirty   = true
+    this._mesh    = null
+  }
+
+  get(col, row) {
+    if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) { return -1 }
+    return this._tiles[row * this.cols + col]
+  }
+
+  set(col, row, tileId) {
+    if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) { return this }
+    this._tiles[row * this.cols + col] = tileId
+    this._dirty = true
+    return this
+  }
+
+  fill(tileId) {
+    var i = 0
+    while (i < this._tiles.length) { this._tiles[i] = tileId; i++ }
+    this._dirty = true
+    return this
+  }
+
+  fillRect(col, row, w, h, tileId) {
+    var r = row
+    while (r < row + h) {
+      var c = col
+      while (c < col + w) { this.set(c, r, tileId); c++ }
+      r++
+    }
+    return this
+  }
+
+  setMeta(col, row, data) {
+    this._meta.set(row * this.cols + col, data)
+    return this
+  }
+
+  getMeta(col, row) {
+    return this._meta.get(row * this.cols + col) || null
+  }
+
+  worldToTile(wx, wz) {
+    val s = this.tileSize
+    return {
+      col: Math.floor(wx / s + this.cols / 2),
+      row: Math.floor(wz / s + this.rows / 2)
+    }
+  }
+
+  tileToWorld(col, row) {
+    val s = this.tileSize
+    return {
+      x: (col - this.cols / 2 + 0.5) * s,
+      z: (row - this.rows / 2 + 0.5) * s
+    }
+  }
+
+  isWalkable(col, row) {
+    return this.get(col, row) === 0
+  }
+
+  buildMesh(tileColors) {
+    tileColors = tileColors || {}
+    val vertices = []
+    val normals  = []
+    val uvs      = []
+    val indices  = []
+    val ts       = this.tileSize
+    val hw       = this.cols * ts / 2
+    val hd       = this.rows * ts / 2
+    var r = 0
+    while (r < this.rows) {
+      var c = 0
+      while (c < this.cols) {
+        val tid  = this.get(c, r)
+        if (tid > 0) {
+          val x0 = c * ts - hw
+          val z0 = r * ts - hd
+          val x1 = x0 + ts
+          val z1 = z0 + ts
+          val base = vertices.length / 3
+          vertices.push(x0,0,z0, x1,0,z0, x1,0,z1, x0,0,z1)
+          normals.push(0,1,0, 0,1,0, 0,1,0, 0,1,0)
+          uvs.push(0,0, 1,0, 1,1, 0,1)
+          indices.push(base,base+1,base+2, base,base+2,base+3)
+        }
+        c++
+      }
+      r++
+    }
+    this._dirty = false
+    return { vertices, normals, uvs, indices, name: 'tilemap' }
+  }
+
+  pathfind(startCol, startRow, endCol, endRow) {
+    val key = (c, r) => r * this.cols + c
+    val open    = []
+    val closed  = new Set()
+    val cameFrom= new Map()
+    val gScore  = new Map()
+    val fScore  = new Map()
+    fn heuristic(c, r) { return Math.abs(c-endCol) + Math.abs(r-endRow) }
+    gScore.set(key(startCol, startRow), 0)
+    fScore.set(key(startCol, startRow), heuristic(startCol, startRow))
+    open.push({ c: startCol, r: startRow, f: fScore.get(key(startCol, startRow)) })
+    var steps = 0
+    while (open.length > 0 && steps < 1000) {
+      open.sort((a, b) => a.f - b.f)
+      val curr = open.shift()
+      val ck   = key(curr.c, curr.r)
+      if (curr.c === endCol && curr.r === endRow) {
+        val path = []
+        var k = ck
+        while (cameFrom.has(k)) {
+          val p = cameFrom.get(k)
+          path.push(this.tileToWorld(p.c, p.r))
+          k = key(p.c, p.r)
+        }
+        path.reverse()
+        path.push(this.tileToWorld(endCol, endRow))
+        return path
+      }
+      closed.add(ck)
+      val neighbors = [[0,1],[0,-1],[1,0],[-1,0]]
+      each nb in neighbors {
+        val nc = curr.c + nb[0], nr = curr.r + nb[1]
+        if (!this.isWalkable(nc, nr)) { continue }
+        val nk = key(nc, nr)
+        if (closed.has(nk)) { continue }
+        val tentG = (gScore.get(ck) || 0) + 1
+        if (!gScore.has(nk) || tentG < gScore.get(nk)) {
+          cameFrom.set(nk, curr)
+          gScore.set(nk, tentG)
+          val f = tentG + heuristic(nc, nr)
+          fScore.set(nk, f)
+          open.push({ c: nc, r: nr, f })
+        }
+      }
+      steps++
+    }
+    return null
+  }
+}
+
+class Heightmap {
+  constructor(cols, rows, scale, heightScale) {
+    this.cols        = cols        || 32
+    this.rows        = rows        || 32
+    this.scale       = scale       || 1
+    this.heightScale = heightScale || 4
+    this._heights    = new Float32Array(cols * rows)
+  }
+
+  get(c, r) {
+    if (c < 0 || c >= this.cols || r < 0 || r >= this.rows) { return 0 }
+    return this._heights[r * this.cols + c]
+  }
+
+  set(c, r, h) {
+    if (c < 0 || c >= this.cols || r < 0 || r >= this.rows) { return }
+    this._heights[r * this.cols + c] = h
+  }
+
+  generateNoise(octaves, persistence, lacunarity, seed) {
+    seed       = seed       || Math.random() * 10000
+    octaves    = octaves    || 4
+    persistence= persistence|| 0.5
+    lacunarity = lacunarity || 2.0
+    var r = 0
+    while (r < this.rows) {
+      var c = 0
+      while (c < this.cols) {
+        var h = 0, amp = 1, freq = 1, maxH = 0
+        var oct = 0
+        while (oct < octaves) {
+          val nx = c / this.cols * freq + seed
+          val nz = r / this.rows * freq + seed * 1.7
+          h    += this._noise2d(nx, nz) * amp
+          maxH += amp
+          amp  *= persistence
+          freq *= lacunarity
+          oct++
+        }
+        this._heights[r * this.cols + c] = (h / maxH) * this.heightScale
+        c++
+      }
+      r++
+    }
+  }
+
+  _noise2d(x, z) {
+    val xi = Math.floor(x), zi = Math.floor(z)
+    val xf = x - xi,        zf = z - zi
+    fn fade(t) { return t*t*t*(t*(t*6-15)+10) }
+    fn lerp(a, b, t) { return a + (b-a)*t }
+    fn grad(h, x, z) {
+      val v = h & 3
+      if (v === 0) { return  x + z }
+      if (v === 1) { return -x + z }
+      if (v === 2) { return  x - z }
+      return -x - z
+    }
+    fn hash(x, z) { return ((x * 1374761253 + z * 1234567891) & 0x7fffffff) % 256 }
+    val ufade = fade(xf), vfade = fade(zf)
+    val aa = hash(xi,   zi), ab = hash(xi,   zi+1)
+    val ba = hash(xi+1, zi), bb = hash(xi+1, zi+1)
+    return lerp(
+      lerp(grad(aa, xf, zf),   grad(ba, xf-1, zf),   ufade),
+      lerp(grad(ab, xf, zf-1), grad(bb, xf-1, zf-1), ufade),
+      vfade
+    ) * 0.5 + 0.5
+  }
+
+  heightAt(wx, wz) {
+    val c  = wx / this.scale + this.cols / 2
+    val r  = wz / this.scale + this.rows / 2
+    val c0 = Math.floor(c), r0 = Math.floor(r)
+    val c1 = c0 + 1,        r1 = r0 + 1
+    val tc = c - c0,        tr = r - r0
+    val h00 = this.get(c0, r0), h10 = this.get(c1, r0)
+    val h01 = this.get(c0, r1), h11 = this.get(c1, r1)
+    return h00 + (h10-h00)*tc + (h01-h00)*tr + (h11-h10-h01+h00)*tc*tr
+  }
+
+  buildMesh(material) {
+    val vertices = [], normals = [], uvs = [], indices = []
+    val hw = this.cols * this.scale / 2
+    val hd = this.rows * this.scale / 2
+    var r = 0
+    while (r <= this.rows) {
+      var c = 0
+      while (c <= this.cols) {
+        val x  = c * this.scale - hw
+        val z  = r * this.scale - hd
+        val y  = this.get(Math.min(c, this.cols-1), Math.min(r, this.rows-1))
+        vertices.push(x, y, z)
+        uvs.push(c / this.cols, r / this.rows)
+        normals.push(0, 1, 0)
+        c++
+      }
+      r++
+    }
+    var ri = 0
+    while (ri < this.rows) {
+      var ci = 0
+      while (ci < this.cols) {
+        val a = ri * (this.cols+1) + ci
+        val b = a  + this.cols + 1
+        indices.push(a, b, a+1)
+        indices.push(b, b+1, a+1)
+        ci++
+      }
+      ri++
+    }
+    return { vertices, normals, uvs, indices, name: 'terrain' }
+  }
+}
+
+exports.Tilemap    = Tilemap
+exports.Heightmap  = Heightmap

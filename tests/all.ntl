@@ -527,3 +527,109 @@ suite("JSX Transform", (s) => {
 })
 
 run()
+
+suite("have operator — full", (s) => {
+  s.test("have in array", (t) => {
+    val fruits = ["apple", "banana", "mango"]
+    val found = false
+    have "banana" in fruits {
+      found = true
+    }
+    t.equal(found, true)
+
+    val notFound = true
+    have "grape" in fruits {
+      notFound = false
+    }
+    t.equal(notFound, true)
+  })
+
+  s.test("have in string (substring)", (t) => {
+    val text = "hello world"
+    val got = false
+    have "world" in text { got = true }
+    t.equal(got, true)
+  })
+
+  s.test("have between", (t) => {
+    val inRange = false
+    have 42 between 1 100 { inRange = true }
+    t.equal(inRange, true)
+
+    val outRange = false
+    have 200 between 1 100 { outRange = true }
+    t.equal(outRange, false)
+  })
+
+  s.test("have matches regex", (t) => {
+    val matched = false
+    have "hello@world.com" matches /^[\w.]+@[\w.]+\.[a-z]{2,}$/ {
+      matched = true
+    }
+    t.equal(matched, true)
+  })
+
+  s.test("have is type check", (t) => {
+    val isStr = false
+    val isNum = false
+    have "text" is String { isStr = true }
+    have 42 is Number     { isNum = true }
+    t.equal(isStr, true)
+    t.equal(isNum, true)
+  })
+
+  s.test("have guard (else early return)", (t) => {
+    fn validate(x) {
+      have x else { return "no value" }
+      have x between 1 10 else { return "out of range" }
+      return "ok"
+    }
+    t.equal(validate(null), "no value")
+    t.equal(validate(99), "out of range")
+    t.equal(validate(5), "ok")
+  })
+
+  s.test("have startsWith / endsWith", (t) => {
+    val sw = false
+    val ew = false
+    have "hello world" startsWith "hello" { sw = true }
+    have "hello world" endsWith "world"   { ew = true }
+    t.equal(sw, true)
+    t.equal(ew, true)
+  })
+})
+
+suite("decorators", (s) => {
+  s.test("@memo memoizes results", (t) => {
+    var calls = 0
+    @memo
+    fn expensive(n) {
+      calls++
+      return n * 2
+    }
+    t.equal(expensive(5), 10)
+    t.equal(expensive(5), 10)
+    t.equal(calls, 1)
+  })
+
+  s.test("@singleton returns same instance", (t) => {
+    @singleton
+    class Counter {
+      init() { this.n = 0 }
+    }
+    val a = new Counter()
+    val b = new Counter()
+    a.n = 99
+    t.equal(b.n, 99)
+    t.equal(a === b, true)
+  })
+
+  s.test("@class adds metadata", (t) => {
+    @class
+    class Config {
+      init() { this.x = 1 }
+    }
+    t.equal(typeof Config.__ntl_meta, "object")
+    t.equal(Config.__ntl_meta.name, "Config")
+  })
+})

@@ -1,0 +1,270 @@
+class Mesh {
+  constructor(opts) {
+    opts = opts || {}
+    this.vertices = opts.vertices || []
+    this.normals  = opts.normals  || []
+    this.uvs      = opts.uvs      || []
+    this.indices  = opts.indices  || []
+    this.name     = opts.name     || 'mesh'
+  }
+  clone() {
+    return new Mesh({
+      vertices: this.vertices.slice(),
+      normals:  this.normals.slice(),
+      uvs:      this.uvs.slice(),
+      indices:  this.indices.slice(),
+      name:     this.name
+    })
+  }
+  computeNormals() {
+    val verts = this.vertices
+    val idx   = this.indices
+    val norms = new Float32Array(verts.length)
+    var i = 0
+    while (i < idx.length) {
+      val i0 = idx[i], i1 = idx[i+1], i2 = idx[i+2]
+      val ax = verts[i0*3], ay = verts[i0*3+1], az = verts[i0*3+2]
+      val bx = verts[i1*3], by = verts[i1*3+1], bz = verts[i1*3+2]
+      val cx = verts[i2*3], cy = verts[i2*3+1], cz = verts[i2*3+2]
+      val ex = bx-ax, ey = by-ay, ez = bz-az
+      val fx = cx-ax, fy = cy-ay, fz = cz-az
+      val nx = ey*fz - ez*fy
+      val ny = ez*fx - ex*fz
+      val nz = ex*fy - ey*fx
+      norms[i0*3] += nx; norms[i0*3+1] += ny; norms[i0*3+2] += nz
+      norms[i1*3] += nx; norms[i1*3+1] += ny; norms[i1*3+2] += nz
+      norms[i2*3] += nx; norms[i2*3+1] += ny; norms[i2*3+2] += nz
+      i += 3
+    }
+    var j = 0
+    while (j < norms.length) {
+      val nx = norms[j], ny = norms[j+1], nz = norms[j+2]
+      val l  = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1
+      norms[j] /= l; norms[j+1] /= l; norms[j+2] /= l
+      j += 3
+    }
+    this.normals = Array.from(norms)
+    return this
+  }
+}
+
+val Geometry = {
+  cube: (w, h, d) => {
+    w = (w === undefined) ? 1 : w
+    h = (h === undefined) ? w : h
+    d = (d === undefined) ? w : d
+    val hw = w*0.5, hh = h*0.5, hd = d*0.5
+    val vertices = [
+      -hw,-hh, hd,  hw,-hh, hd,  hw, hh, hd, -hw, hh, hd,
+      -hw,-hh,-hd, -hw, hh,-hd,  hw, hh,-hd,  hw,-hh,-hd,
+      -hw, hh,-hd, -hw, hh, hd,  hw, hh, hd,  hw, hh,-hd,
+      -hw,-hh,-hd,  hw,-hh,-hd,  hw,-hh, hd, -hw,-hh, hd,
+       hw,-hh,-hd,  hw, hh,-hd,  hw, hh, hd,  hw,-hh, hd,
+      -hw,-hh,-hd, -hw,-hh, hd, -hw, hh, hd, -hw, hh,-hd
+    ]
+    val normals = [
+       0, 0, 1,  0, 0, 1,  0, 0, 1,  0, 0, 1,
+       0, 0,-1,  0, 0,-1,  0, 0,-1,  0, 0,-1,
+       0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0,
+       0,-1, 0,  0,-1, 0,  0,-1, 0,  0,-1, 0,
+       1, 0, 0,  1, 0, 0,  1, 0, 0,  1, 0, 0,
+      -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0
+    ]
+    val uvs = [
+      0,0,1,0,1,1,0,1, 1,0,1,1,0,1,0,0,
+      0,1,0,0,1,0,1,1, 0,0,1,0,1,1,0,1,
+      1,0,1,1,0,1,0,0, 0,0,1,0,1,1,0,1
+    ]
+    val indices = []
+    var face = 0
+    while (face < 6) {
+      val base = face * 4
+      indices.push(base,base+1,base+2, base,base+2,base+3)
+      face++
+    }
+    return new Mesh({ vertices, normals, uvs, indices, name:'cube' })
+  },
+
+  sphere: (radius, segments, rings) => {
+    radius   = radius   || 1
+    segments = segments || 24
+    rings    = rings    || 16
+    val vertices = [], normals = [], uvs = [], indices = []
+    var r = 0
+    while (r <= rings) {
+      val phi   = Math.PI * r / rings
+      val sinP  = Math.sin(phi), cosP = Math.cos(phi)
+      var s = 0
+      while (s <= segments) {
+        val theta = 2 * Math.PI * s / segments
+        val sinT  = Math.sin(theta), cosT = Math.cos(theta)
+        val x = cosT * sinP, y = cosP, z = sinT * sinP
+        vertices.push(x*radius, y*radius, z*radius)
+        normals.push(x, y, z)
+        uvs.push(s/segments, r/rings)
+        s++
+      }
+      r++
+    }
+    var ri = 0
+    while (ri < rings) {
+      var si = 0
+      while (si < segments) {
+        val first  = ri * (segments+1) + si
+        val second = first + segments + 1
+        indices.push(first, second, first+1)
+        indices.push(second, second+1, first+1)
+        si++
+      }
+      ri++
+    }
+    return new Mesh({ vertices, normals, uvs, indices, name:'sphere' })
+  },
+
+  plane: (w, d, segW, segD) => {
+    w    = w    || 10
+    d    = d    || 10
+    segW = segW || 1
+    segD = segD || 1
+    val vertices = [], normals = [], uvs = [], indices = []
+    var iz = 0
+    while (iz <= segD) {
+      var ix = 0
+      while (ix <= segW) {
+        val x = (ix/segW - 0.5) * w
+        val z = (iz/segD - 0.5) * d
+        vertices.push(x, 0, z)
+        normals.push(0, 1, 0)
+        uvs.push(ix/segW, iz/segD)
+        ix++
+      }
+      iz++
+    }
+    var iz2 = 0
+    while (iz2 < segD) {
+      var ix2 = 0
+      while (ix2 < segW) {
+        val a = iz2 * (segW+1) + ix2
+        val b = a + segW + 1
+        indices.push(a, b, a+1)
+        indices.push(b, b+1, a+1)
+        ix2++
+      }
+      iz2++
+    }
+    return new Mesh({ vertices, normals, uvs, indices, name:'plane' })
+  },
+
+  cylinder: (radiusTop, radiusBottom, height, segments, caps) => {
+    radiusTop    = radiusTop    || 0.5
+    radiusBottom = radiusBottom || 0.5
+    height       = height       || 2
+    segments     = segments     || 20
+    caps         = (caps === undefined) ? true : caps
+    val vertices = [], normals = [], uvs = [], indices = []
+    val hh = height * 0.5
+    var s = 0
+    while (s <= segments) {
+      val theta  = 2 * Math.PI * s / segments
+      val sinT   = Math.sin(theta), cosT = Math.cos(theta)
+      val slope  = (radiusBottom - radiusTop) / height
+      val nlen   = Math.sqrt(1 + slope*slope)
+      val nx     = cosT / nlen, nz = sinT / nlen, ny = slope / nlen
+      vertices.push(radiusTop * cosT, hh, radiusTop * sinT)
+      normals.push(nx, ny, nz)
+      uvs.push(s/segments, 0)
+      vertices.push(radiusBottom * cosT, -hh, radiusBottom * sinT)
+      normals.push(nx, ny, nz)
+      uvs.push(s/segments, 1)
+      s++
+    }
+    var si = 0
+    while (si < segments) {
+      val base = si * 2
+      indices.push(base, base+2, base+1)
+      indices.push(base+1, base+2, base+3)
+      si++
+    }
+    if (caps) {
+      val topCenter = vertices.length / 3
+      vertices.push(0, hh, 0); normals.push(0,1,0); uvs.push(0.5,0.5)
+      var cs = 0
+      while (cs < segments) {
+        vertices.push(radiusTop * Math.cos(2*Math.PI*cs/segments), hh, radiusTop * Math.sin(2*Math.PI*cs/segments))
+        normals.push(0,1,0); uvs.push(0.5+Math.cos(2*Math.PI*cs/segments)*0.5, 0.5+Math.sin(2*Math.PI*cs/segments)*0.5)
+        cs++
+      }
+      var ct = 0
+      while (ct < segments) {
+        indices.push(topCenter, topCenter+1+ct, topCenter+1+(ct+1)%segments)
+        ct++
+      }
+      val botCenter = vertices.length / 3
+      vertices.push(0, -hh, 0); normals.push(0,-1,0); uvs.push(0.5,0.5)
+      cs = 0
+      while (cs < segments) {
+        vertices.push(radiusBottom * Math.cos(2*Math.PI*cs/segments), -hh, radiusBottom * Math.sin(2*Math.PI*cs/segments))
+        normals.push(0,-1,0); uvs.push(0.5+Math.cos(2*Math.PI*cs/segments)*0.5, 0.5+Math.sin(2*Math.PI*cs/segments)*0.5)
+        cs++
+      }
+      ct = 0
+      while (ct < segments) {
+        indices.push(botCenter, botCenter+1+(ct+1)%segments, botCenter+1+ct)
+        ct++
+      }
+    }
+    return new Mesh({ vertices, normals, uvs, indices, name:'cylinder' })
+  },
+
+  cone: (radius, height, segments) => {
+    return Geometry.cylinder(0, radius, height, segments || 20, true)
+  },
+
+  torus: (R, r, segs, sides) => {
+    R    = R    || 1
+    r    = r    || 0.3
+    segs = segs || 24
+    sides= sides|| 12
+    val vertices = [], normals = [], uvs = [], indices = []
+    var i = 0
+    while (i <= segs) {
+      val theta = 2 * Math.PI * i / segs
+      val cosT  = Math.cos(theta), sinT = Math.sin(theta)
+      var j = 0
+      while (j <= sides) {
+        val phi  = 2 * Math.PI * j / sides
+        val cosP = Math.cos(phi), sinP = Math.sin(phi)
+        val x = (R + r*cosP) * cosT
+        val y = r * sinP
+        val z = (R + r*cosP) * sinT
+        vertices.push(x, y, z)
+        normals.push(cosP*cosT, sinP, cosP*sinT)
+        uvs.push(i/segs, j/sides)
+        j++
+      }
+      i++
+    }
+    var ii = 0
+    while (ii < segs) {
+      var jj = 0
+      while (jj < sides) {
+        val a = ii*(sides+1)+jj
+        val b = a + sides + 1
+        indices.push(a, b, a+1)
+        indices.push(b, b+1, a+1)
+        jj++
+      }
+      ii++
+    }
+    return new Mesh({ vertices, normals, uvs, indices, name:'torus' })
+  },
+
+  fromArrays: (vertices, normals, uvs, indices, name) => {
+    val m = new Mesh({ vertices, normals, uvs, indices, name: name || 'custom' })
+    if (!normals || normals.length === 0) { m.computeNormals() }
+    return m
+  }
+}
+
+exports.Mesh     = Mesh
+exports.Geometry = Geometry

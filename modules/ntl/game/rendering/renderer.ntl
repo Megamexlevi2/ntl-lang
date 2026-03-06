@@ -1,0 +1,284 @@
+fn edgeFunc(ax, ay, bx, by, px, py) {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+}
+
+fn clampByte(v) {
+  if (v < 0) { return 0 }
+  if (v > 255) { return 255 }
+  return v | 0
+}
+
+class Renderer3D {
+  constructor(width, height) {
+    this.width   = width  || 1280
+    this.height  = height || 720
+    val pixels   = width * height
+    this.buffer  = new Uint8Array(pixels * 4)
+    this.zBuffer = new Float32Array(pixels)
+    this.clearColor = { r: 30, g: 30, b: 40, a: 255 }
+    this._trianglesDrawn = 0
+    this._verticesProcessed = 0
+  }
+
+  clear() {
+    val buf = this.buffer
+    val zbuf = this.zBuffer
+    val cr = this.clearColor.r
+    val cg = this.clearColor.g
+    val cb = this.clearColor.b
+    val total = this.width * this.height
+    var i = 0
+    while (i < total) {
+      val off = i * 4
+      buf[off]   = cr
+      buf[off+1] = cg
+      buf[off+2] = cb
+      buf[off+3] = 255
+      zbuf[i]    = 1.0
+      i++
+    }
+    this._trianglesDrawn    = 0
+    this._verticesProcessed = 0
+  }
+
+  setClearColor(r, g, b) {
+    this.clearColor = { r: r|0, g: g|0, b: b|0, a: 255 }
+  }
+
+  drawMesh(mesh, mvp, modelMat, normalMat, lights, material, camera) {
+    val verts  = mesh.vertices
+    val norms  = mesh.normals
+    val uvs    = mesh.uvs
+    val idx    = mesh.indices
+    val w      = this.width
+    val h      = this.height
+    val hw     = w * 0.5
+    val hh     = h * 0.5
+    val buf    = this.buffer
+    val zbuf   = this.zBuffer
+    val mat    = material || { r:200, g:200, b:200, shininess:32, metallic:0.0 }
+
+    var t = 0
+    while (t < idx.length) {
+      val i0 = idx[t], i1 = idx[t+1], i2 = idx[t+2]
+      t += 3
+
+      val vx0 = verts[i0*3], vy0 = verts[i0*3+1], vz0 = verts[i0*3+2]
+      val vx1 = verts[i1*3], vy1 = verts[i1*3+1], vz1 = verts[i1*3+2]
+      val vx2 = verts[i2*3], vy2 = verts[i2*3+1], vz2 = verts[i2*3+2]
+
+      val m = mvp.m
+
+      fn xform(vx, vy, vz) {
+        return {
+          x: m[0]*vx + m[1]*vy + m[2]*vz + m[3],
+          y: m[4]*vx + m[5]*vy + m[6]*vz + m[7],
+          z: m[8]*vx + m[9]*vy + m[10]*vz + m[11],
+          w: m[12]*vx + m[13]*vy + m[14]*vz + m[15]
+        }
+      }
+
+      val c0 = xform(vx0, vy0, vz0)
+      val c1 = xform(vx1, vy1, vz1)
+      val c2 = xform(vx2, vy2, vz2)
+
+      if (c0.w < 0.001 || c1.w < 0.001 || c2.w < 0.001) { continue }
+
+      val ix0 = c0.x / c0.w, iy0 = c0.y / c0.w, iz0 = (c0.z / c0.w) * 0.5 + 0.5
+      val ix1 = c1.x / c1.w, iy1 = c1.y / c1.w, iz1 = (c1.z / c1.w) * 0.5 + 0.5
+      val ix2 = c2.x / c2.w, iy2 = c2.y / c2.w, iz2 = (c2.z / c2.w) * 0.5 + 0.5
+
+      if (iz0 < 0 || iz1 < 0 || iz2 < 0) { continue }
+      if (iz0 > 1 && iz1 > 1 && iz2 > 1) { continue }
+
+      val sx0 = (ix0 + 1) * hw, sy0 = (1 - iy0) * hh
+      val sx1 = (ix1 + 1) * hw, sy1 = (1 - iy1) * hh
+      val sx2 = (ix2 + 1) * hw, sy2 = (1 - iy2) * hh
+
+      val area = edgeFunc(sx0, sy0, sx1, sy1, sx2, sy2)
+      if (area <= 0) { continue }
+
+      val nm  = normalMat.m
+      fn xnorm(nx, ny, nz) {
+        return {
+          x: nm[0]*nx + nm[1]*ny + nm[2]*nz,
+          y: nm[4]*nx + nm[5]*ny + nm[6]*nz,
+          z: nm[8]*nx + nm[9]*ny + nm[10]*nz
+        }
+      }
+
+      var nx0=0, ny0=1, nz0=0
+      var nx1=0, ny1=1, nz1=0
+      var nx2=0, ny2=1, nz2=0
+      if (norms && norms.length > 0) {
+        val n0r = xnorm(norms[i0*3], norms[i0*3+1], norms[i0*3+2])
+        val n1r = xnorm(norms[i1*3], norms[i1*3+1], norms[i1*3+2])
+        val n2r = xnorm(norms[i2*3], norms[i2*3+1], norms[i2*3+2])
+        nx0=n0r.x; ny0=n0r.y; nz0=n0r.z
+        nx1=n1r.x; ny1=n1r.y; nz1=n1r.z
+        nx2=n2r.x; ny2=n2r.y; nz2=n2r.z
+      }
+
+      val mm  = modelMat.m
+      fn xworld(vx, vy, vz) {
+        return {
+          x: mm[0]*vx + mm[1]*vy + mm[2]*vz + mm[3],
+          y: mm[4]*vx + mm[5]*vy + mm[6]*vz + mm[7],
+          z: mm[8]*vx + mm[9]*vy + mm[10]*vz + mm[11]
+        }
+      }
+      val wv0 = xworld(vx0, vy0, vz0)
+      val wv1 = xworld(vx1, vy1, vz1)
+      val wv2 = xworld(vx2, vy2, vz2)
+
+      val minX = Math.max(0, Math.floor(Math.min(sx0, sx1, sx2)))
+      val maxX = Math.min(w - 1, Math.ceil(Math.max(sx0, sx1, sx2)))
+      val minY = Math.max(0, Math.floor(Math.min(sy0, sy1, sy2)))
+      val maxY = Math.min(h - 1, Math.ceil(Math.max(sy0, sy1, sy2)))
+
+      val invW0 = 1 / c0.w, invW1 = 1 / c1.w, invW2 = 1 / c2.w
+
+      val baseR = mat.r || 200, baseG = mat.g || 200, baseB = mat.b || 200
+      val shininess = mat.shininess || 32
+      val ambientStr = 0.12
+
+      val camX = camera ? camera.x : 0
+      val camY = camera ? camera.y : 5
+      val camZ = camera ? camera.z : 10
+
+      var py = minY
+      while (py <= maxY) {
+        var px = minX
+        while (px <= maxX) {
+          val ppx = px + 0.5, ppy = py + 0.5
+
+          val w0 = edgeFunc(sx1, sy1, sx2, sy2, ppx, ppy)
+          val w1 = edgeFunc(sx2, sy2, sx0, sy0, ppx, ppy)
+          val w2 = edgeFunc(sx0, sy0, sx1, sy1, ppx, ppy)
+
+          if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+            val b0 = w0 / area, b1 = w1 / area, b2 = w2 / area
+
+            val interpInvW = b0 * invW0 + b1 * invW1 + b2 * invW2
+            val depth = b0 * iz0 + b1 * iz1 + b2 * iz2
+            val pidx  = py * w + px
+
+            if (depth < zbuf[pidx]) {
+              zbuf[pidx] = depth
+
+              val bpc0 = b0 * invW0 / interpInvW
+              val bpc1 = b1 * invW1 / interpInvW
+              val bpc2 = b2 * invW2 / interpInvW
+
+              val fnx = nx0 * bpc0 + nx1 * bpc1 + nx2 * bpc2
+              val fny = ny0 * bpc0 + ny1 * bpc1 + ny2 * bpc2
+              val fnz = nz0 * bpc0 + nz1 * bpc1 + nz2 * bpc2
+              val nl  = Math.sqrt(fnx*fnx + fny*fny + fnz*fnz) || 1
+              val nnx = fnx/nl, nny = fny/nl, nnz = fnz/nl
+
+              val fwx = wv0.x * bpc0 + wv1.x * bpc1 + wv2.x * bpc2
+              val fwy = wv0.y * bpc0 + wv1.y * bpc1 + wv2.y * bpc2
+              val fwz = wv0.z * bpc0 + wv1.z * bpc1 + wv2.z * bpc2
+
+              var litR = baseR * ambientStr
+              var litG = baseG * ambientStr
+              var litB = baseB * ambientStr
+
+              if (lights) {
+                var li = 0
+                while (li < lights.length) {
+                  val light = lights[li]
+                  li++
+                  var lx, ly, lz, lstr, lr, lg, lb
+                  if (light.type === 'directional') {
+                    lx = -light.dx || 0; ly = -light.dy || -1; lz = -light.dz || 0
+                    val ldl = Math.sqrt(lx*lx + ly*ly + lz*lz) || 1
+                    lx /= ldl; ly /= ldl; lz /= ldl
+                    lstr = light.intensity || 1
+                  } else {
+                    val dlx = (light.x || 0) - fwx
+                    val dly = (light.y || 5) - fwy
+                    val dlz = (light.z || 0) - fwz
+                    val dist = Math.sqrt(dlx*dlx + dly*dly + dlz*dlz) || 1
+                    lx = dlx/dist; ly = dly/dist; lz = dlz/dist
+                    val lrange = light.lightRange || 20
+                    lstr = (light.intensity || 1) * Math.max(0, 1.0 - dist / lrange)
+                  }
+                  lr = light.r != null ? light.r : 255
+                  lg = light.g != null ? light.g : 255
+                  lb = light.b != null ? light.b : 255
+
+                  val diff = Math.max(0, nnx*lx + nny*ly + nnz*lz) * lstr
+                  litR += (baseR / 255) * (lr / 255) * diff * 255
+                  litG += (baseG / 255) * (lg / 255) * diff * 255
+                  litB += (baseB / 255) * (lb / 255) * diff * 255
+
+                  val vdx = camX - fwx, vdy = camY - fwy, vdz = camZ - fwz
+                  val vl = Math.sqrt(vdx*vdx+vdy*vdy+vdz*vdz) || 1
+                  val vnx = vdx/vl, vny = vdy/vl, vnz = vdz/vl
+                  val rhx = lx + vnx, rhy = ly + vny, rhz = lz + vnz
+                  val rhl = Math.sqrt(rhx*rhx+rhy*rhy+rhz*rhz) || 1
+                  val spec = Math.pow(Math.max(0, (rhx/rhl)*nnx + (rhy/rhl)*nny + (rhz/rhl)*nnz), shininess) * lstr * 0.5
+                  litR += (lr / 255) * spec * 255
+                  litG += (lg / 255) * spec * 255
+                  litB += (lb / 255) * spec * 255
+                }
+              }
+
+              val off = pidx * 4
+              buf[off]   = clampByte(litR)
+              buf[off+1] = clampByte(litG)
+              buf[off+2] = clampByte(litB)
+              buf[off+3] = 255
+            }
+          }
+          px++
+        }
+        py++
+      }
+      this._trianglesDrawn++
+      this._verticesProcessed += 3
+    }
+  }
+
+  drawSkybox(colorTop, colorBottom) {
+    val h = this.height, w = this.width
+    val buf = this.buffer
+    var y = 0
+    while (y < h) {
+      val t = y / h
+      val r = (colorTop.r + (colorBottom.r - colorTop.r) * t) | 0
+      val g = (colorTop.g + (colorBottom.g - colorTop.g) * t) | 0
+      val b = (colorTop.b + (colorBottom.b - colorTop.b) * t) | 0
+      var x = 0
+      while (x < w) {
+        val off = (y * w + x) * 4
+        buf[off]   = r
+        buf[off+1] = g
+        buf[off+2] = b
+        buf[off+3] = 255
+        x++
+      }
+      y++
+    }
+  }
+
+  getStats() {
+    return {
+      triangles: this._trianglesDrawn,
+      vertices:  this._verticesProcessed,
+      width:     this.width,
+      height:    this.height
+    }
+  }
+
+  resize(width, height) {
+    this.width   = width
+    this.height  = height
+    val pixels   = width * height
+    this.buffer  = new Uint8Array(pixels * 4)
+    this.zBuffer = new Float32Array(pixels)
+  }
+}
+
+exports.Renderer3D = Renderer3D

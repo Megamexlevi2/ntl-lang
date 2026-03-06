@@ -1,0 +1,248 @@
+// Created by David Dev
+// GitHub: https://github.com/Megamexlevi2/ntl-lang
+// (c) David Dev 2026. All rights reserved.
+
+*// ntl:ws — WebSocket server and client, zero external dependencies
+*// import it: val { WebSocketServer, WebSocket } = require("ntl:ws")
+
+val _net    = require("net")
+val _http   = require("http")
+val _crypto = require("crypto")
+val _events = require("events")
+
+*// ─── Handshake helper ─────────────────────────────────────────────────
+
+fn _wsAcceptKey(key) {
+  return _crypto.createHash("sha1")
+    .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    .digest("base64")
+}
+
+*// ─── Frame parser ─────────────────────────────────────────────────────
+
+fn _parseFrame(buf) {
+  if (buf.length < 2) { return null }
+  val fin    = (buf[0] & 0x80) !== 0
+  val opcode = buf[0] & 0x0f
+  val masked = (buf[1] & 0x80) !== 0
+  var payLen = buf[1] & 0x7f
+  var offset = 2
+  if (payLen === 126) { payLen = buf.readUInt16BE(2); offset = 4 }
+  else if (payLen === 127) { payLen = Number(buf.readBigUInt64BE(2)); offset = 10 }
+  if (buf.length < offset + (masked ? 4 : 0) + payLen) { return null }
+  var payload = buf.slice(offset + (masked ? 4 : 0), offset + (masked ? 4 : 0) + payLen)
+  if (masked) {
+    val mask = buf.slice(offset, offset + 4)
+    payload = Buffer.from(payload)
+    var i = 0
+    while (i < payload.length) { payload[i] ^= mask[i % 4]; i++ }
+  }
+  return { fin, opcode, payload, length: offset + (masked ? 4 : 0) + payLen }
+}
+
+fn _makeFrame(data, opcode, mask) {
+  val payload = typeof data === "string" ? Buffer.from(data, "utf8") : data
+  val len     = payload.length
+  var header
+  if (len < 126)       { header = Buffer.alloc(2); header[1] = len }
+  else if (len < 65536){ header = Buffer.alloc(4); header[1] = 126; header.writeUInt16BE(len, 2) }
+  else                 { header = Buffer.alloc(10); header[1] = 127; header.writeBigUInt64BE(BigInt(len), 2) }
+  header[0] = 0x80 | (opcode & 0x0f)
+  if (mask) {
+    header[1] |= 0x80
+    val mkey = _crypto.randomBytes(4)
+    val mp   = Buffer.from(payload)
+    var i = 0
+    while (i < mp.length) { mp[i] ^= mkey[i % 4]; i++ }
+    return Buffer.concat([header, mkey, mp])
+  }
+  return Buffer.concat([header, payload])
+}
+
+*// ─── Connection ───────────────────────────────────────────────────────
+
+class Connection {
+  init(socket) {
+    this.socket  = socket
+    this.id      = _crypto.randomBytes(4).toString("hex")
+    this.readyState = 1    *// 0=connecting 1=open 2=closing 3=closed
+    this._buf    = Buffer.alloc(0)
+    this._onMsg  = []
+    this._onClose= []
+    this._onError= []
+
+    socket.on("data", (chunk) => {
+      this._buf = Buffer.concat([this._buf, chunk])
+      this._processFrames()
+    })
+    socket.on("close", () => {
+      this.readyState = 3
+      for val h of this._onClose { try { h() } catch(_e) {} }
+    })
+    socket.on("error", (e) => {
+      for val h of this._onError { try { h(e) } catch(_e) {} }
+    })
+  }
+
+  _processFrames() {
+    while (this._buf.length >= 2) {
+      val frame = _parseFrame(this._buf)
+      if (!frame) { break }
+      this._buf = this._buf.slice(frame.length)
+      if (frame.opcode === 8) { this.close(); break }
+      if (frame.opcode === 9) { this.socket.write(_makeFrame(frame.payload, 10, false)); continue }
+      if (frame.opcode === 1 || frame.opcode === 2) {
+        val msg = frame.opcode === 1 ? frame.payload.toString("utf8") : frame.payload
+        for val h of this._onMsg { try { h(msg) } catch(_e) {} }
+      }
+    }
+  }
+
+  *// send("hello") or send(Buffer)
+  send(data) {
+    if (this.readyState !== 1) { return }
+    val isBuf = Buffer.isBuffer(data)
+    this.socket.write(_makeFrame(data, isBuf ? 2 : 1, false))
+  }
+
+  *// sendJson({ type: "update", data }) → JSON.stringify then send
+  sendJson(obj) { this.send(JSON.stringify(obj)) }
+
+  on(event, fn2) {
+    if (event === "message") { this._onMsg.push(fn2) }
+    if (event === "close")   { this._onClose.push(fn2) }
+    if (event === "error")   { this._onError.push(fn2) }
+    return this
+  }
+
+  close(code, reason) {
+    if (this.readyState !== 1) { return }
+    this.readyState = 2
+    this.socket.write(_makeFrame(Buffer.alloc(0), 8, false))
+    this.socket.end()
+  }
+}
+
+*// ─── WebSocket Server ─────────────────────────────────────────────────
+
+class WebSocketServer {
+  init(opts) {
+    val o = opts || {}
+    this.port    = o.port || 8080
+    this._server = null
+    this._conns  = new Set()
+    this._onConn = []
+  }
+
+  *// listen(8080) → start the WS server
+  listen(port) {
+    this.port   = port || this.port
+    this._server = _http.createServer()
+    this._server.on("upgrade", (req, socket) => {
+      val key = req.headers["sec-websocket-key"]
+      if (!key) { socket.destroy(); return }
+      val accept = _wsAcceptKey(key)
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+        "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
+        "Sec-WebSocket-Accept: " + accept + "\r\n\r\n"
+      )
+      val conn = new Connection(socket)
+      this._conns.add(conn)
+      conn.on("close", () => { this._conns.delete(conn) })
+      for val h of this._onConn { try { h(conn) } catch(_e) {} }
+    })
+    return new Promise((resolve) => {
+      this._server.listen(this.port, () => resolve(this))
+    })
+  }
+
+  on(event, fn2) {
+    if (event === "connection") { this._onConn.push(fn2) }
+    return this
+  }
+
+  *// broadcast(data) → send to all connected clients
+  broadcast(data) {
+    for val conn of this._conns { conn.send(data) }
+  }
+
+  *// clients → number of connected clients
+  get clients() { return this._conns.size }
+
+  close() {
+    for val conn of this._conns { conn.close() }
+    return new Promise((resolve) => { this._server.close(resolve) })
+  }
+}
+
+*// ─── WebSocket Client ─────────────────────────────────────────────────
+
+class WebSocket {
+  init(url2) {
+    this._url    = url2
+    this._socket = null
+    this._conn   = null
+    this.readyState = 0
+    this._onOpen  = []
+    this._onMsg   = []
+    this._onClose = []
+    this._onError = []
+  }
+
+  *// connect() → returns Promise that resolves when connected
+  connect() {
+    return new Promise((resolve, reject) => {
+      val parsed = new URL(this._url)
+      val port   = parseInt(parsed.port) || 80
+      val key    = _crypto.randomBytes(16).toString("base64")
+      val socket = _net.createConnection(port, parsed.hostname, () => {
+        socket.write(
+          "GET " + (parsed.pathname || "/") + " HTTP/1.1\r\n" +
+          "Host: " + parsed.hostname + "\r\n" +
+          "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
+          "Sec-WebSocket-Key: " + key + "\r\nSec-WebSocket-Version: 13\r\n\r\n"
+        )
+      })
+      this._socket = socket
+      var buffer = Buffer.alloc(0)
+      var upgraded = false
+      socket.on("data", (chunk) => {
+        if (!upgraded) {
+          buffer = Buffer.concat([buffer, chunk])
+          val str = buffer.toString()
+          if (str.includes("\r\n\r\n")) {
+            upgraded = true
+            this.readyState = 1
+            val rest = buffer.slice(buffer.indexOf("\r\n\r\n") + 4)
+            this._conn = new Connection(socket)
+            this._conn._buf = rest
+            this._conn._onMsg  = this._onMsg
+            this._conn._onClose = this._onClose
+            this._conn._onError = this._onError
+            for val h of this._onOpen { try { h() } catch(_e) {} }
+            resolve(this)
+          }
+        }
+      })
+      socket.on("error", (e) => {
+        for val h of this._onError { try { h(e) } catch(_e) {} }
+        reject(e)
+      })
+    })
+  }
+
+  send(data)     { if (this._conn) { this._conn.send(data) } }
+  sendJson(obj)  { this.send(JSON.stringify(obj)) }
+  close()        { if (this._conn) { this._conn.close() } }
+
+  on(event, fn2) {
+    if (event === "open")    { this._onOpen.push(fn2) }
+    if (event === "message") { this._onMsg.push(fn2) }
+    if (event === "close")   { this._onClose.push(fn2) }
+    if (event === "error")   { this._onError.push(fn2) }
+    return this
+  }
+}
+
+export { WebSocketServer, WebSocket, Connection }
