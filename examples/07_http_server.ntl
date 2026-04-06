@@ -1,0 +1,37 @@
+val http = require("ntl:http")
+
+val app = http.createServer()
+
+app.get("/", (req, res) => {
+  res.json({ message: "Hello from NTL!", version: "3.5.0" })
+})
+
+app.get("/users", (req, res) => {
+  val users = [
+    { id: 1, name: "Alice", role: "admin" },
+    { id: 2, name: "Bob",   role: "user"  },
+    { id: 3, name: "Carol", role: "user"  },
+  ]
+  res.json({ users, total: users.length })
+})
+
+app.get("/users/:id", (req, res) => {
+  val id = parseInt(req.params.id)
+  guard !isNaN(id) else {
+    res.status(400).json({ error: "Invalid user ID" })
+    return
+  }
+  res.json({ id, name: `User ${id}`, email: `user${id}@example.com` })
+})
+
+app.post("/echo", (req, res) => {
+  res.json({ received: req.body, timestamp: Date.now() })
+})
+
+app.listen(3000, () => {
+  log "Server running at http://localhost:3000"
+  log "  GET  /         — hello world"
+  log "  GET  /users    — list users"
+  log "  GET  /users/1  — get user by id"
+  log "  POST /echo     — echo body"
+})

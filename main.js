@@ -224,34 +224,31 @@ function runFile(file, opts) {
     const runner   = new JITRunner({ verbose, showUpgrades: verbose, optimize });
     const ctx      = makeRunContext(absFile, { __ntl_jit_profiler__: runner.profiler });
     vm.createContext(ctx);
-
     const res = runner.run(source, file, compiler, ctx);
-
     if (!res.success) {
       for (const e of (res.errors || [])) {
-        process.stderr.write(fmtErr(
-          Object.assign({ file, sourceLines: srcLines, ntlError: false }, e), srcLines));
+        process.stderr.write(fmtErr(Object.assign({ file, sourceLines: srcLines, ntlError: false }, e), srcLines));
       }
       process.exit(1);
     }
     if (report || verbose) runner.printReport();
   } else {
     const compiler = new Compiler(opts);
-    const result   = compiler.compileSource(source, file, opts);
+    const result   = compiler.compileSource(source, absFile, opts);
     if (!result.success) {
       for (const e of result.errors) {
         process.stderr.write(fmtErr(Object.assign({}, e, { file, sourceLines: srcLines }), srcLines));
       }
       process.exit(1);
     }
-    const os      = require('os');
-    const crypto  = require('crypto');
-    const tmpDir  = os.tmpdir();
-    const tmpHash = crypto.createHash('md5').update(absFile + source.length).digest('hex').slice(0, 8);
+    const os_     = require('os');
+    const crypto_ = require('crypto');
+    const tmpDir  = os_.tmpdir();
+    const tmpHash = crypto_.createHash('md5').update(absFile + source.length).digest('hex').slice(0, 8);
     const tmpFile = path.join(tmpDir, 'ntl_run_' + tmpHash + '.js');
 
-    const preamble = _buildRunPreamble(absFile);
-    const fullCode = preamble + '\n' + result.code;
+    const preamble  = _buildRunPreamble(absFile);
+    const fullCode  = preamble + '\n' + result.code;
 
     try {
       fs.writeFileSync(tmpFile, fullCode, 'utf-8');
@@ -271,21 +268,32 @@ function _buildRunPreamble(absFile) {
   const ntlDir  = JSON.stringify(path.join(__dirname));
   const fileDir = JSON.stringify(path.dirname(absFile));
   return `(function(){
-const Module  = require('module');
-const _path   = require('path');
-const _ntlDir = ${ntlDir};
-const _fileDir= ${fileDir};
-const _orig   = Module._resolveFilename.bind(Module);
+const Module = require('module');
+const _path  = require('path');
+const _fileDir = ${fileDir};
+function _resolveNtlDir() {
+  try { return _path.dirname(require.resolve('ntl-lang/package.json')); } catch(_) {}
+  try {
+    const _r = require('fs').realpathSync(process.argv[1] || '');
+    const _m = _r.match(/^(.*?node_modules[\\\\/]ntl-lang)/);
+    if (_m) return _m[1];
+  } catch(_) {}
+  return ${ntlDir};
+}
+const _ntlDir = _resolveNtlDir();
+const _origResolve = Module._resolveFilename.bind(Module);
 Module._resolveFilename = function(req, parent, isMain, opts) {
   if (req.startsWith('./') || req.startsWith('../')) {
-    return _orig(_path.resolve(_fileDir, req), parent, isMain, opts);
+    return _origResolve(_path.resolve(_fileDir, req), parent, isMain, opts);
   }
   if (req.startsWith('ntl:')) {
-    const { resolveToPath } = require(_path.join(_ntlDir, 'src/runtime/resolver'));
-    const p = resolveToPath(req);
-    if (p) return p;
+    try {
+      const { resolveToPath } = require(_path.join(_ntlDir, 'src/runtime/resolver'));
+      const p = resolveToPath(req);
+      if (p) return p;
+    } catch(_) {}
   }
-  return _orig(req, parent, isMain, opts);
+  return _origResolve(req, parent, isMain, opts);
 };
 const _origLoad = Module._load.bind(Module);
 Module._load = function(req, parent, isMain) {
@@ -297,7 +305,6 @@ Module._load = function(req, parent, isMain) {
 };
 })();`;
 }
-
 function compileAndWrite(inputFile, outputFile, opts) {
   const compiler = new Compiler(opts);
   const t0 = Date.now();
@@ -494,6 +501,22 @@ switch (cmd) {
   case 'build': {
     if (!fileArg)              die('Usage: ntl build <file.ntl|ntl.json> [-o output.js]');
     if (!fs.existsSync(fileArg)) die(`File not found: ${fileArg}`);
+    if (flags.reverse || flags.r) {
+      const { reverseCompile } = require('./src/reverse');
+      const jsSrc = fs.readFileSync(fileArg, 'utf-8');
+      const revResult = reverseCompile(jsSrc, fileArg);
+      if (!revResult.success) {
+        for (const e of revResult.errors) process.stderr.write(RED('  error') + ': ' + e.message + '\n');
+        process.exit(1);
+      }
+      const outFile = flags.reverse !== true ? flags.reverse : (flags.out || flags.o || fileArg.replace(/\.js$/, '.ntl'));
+      fs.mkdirSync(path.dirname(path.resolve(outFile)), { recursive: true });
+      fs.writeFileSync(outFile, revResult.code, 'utf-8');
+      process.stdout.write('\n');
+      ok(`${path.relative('.', fileArg)}  ${GRAY('→')}  ${CYAN(outFile)}  ${GRAY(Math.round(revResult.code.length/1024*10)/10 + ' KB')}`);
+      process.stdout.write('\n');
+      break;
+    }
     process.stdout.write('\n');
     compileAndWrite(fileArg, flags.out || flags.o || null, buildOpts());
     break;

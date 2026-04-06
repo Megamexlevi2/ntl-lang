@@ -1,0 +1,35 @@
+val { EventEmitter } = require("ntl:events")
+
+val bus = new EventEmitter()
+
+bus.on("user:login", (user) => {
+  log `[AUTH]  ${user.name} logged in`
+})
+
+bus.on("user:login", (user) => {
+  log `[AUDIT] Login recorded for user #${user.id}`
+})
+
+bus.on("order:placed", (order) => {
+  log `[ORDER] #${order.id} — $${order.total.toFixed(2)}`
+})
+
+bus.on("order:placed", (order) => {
+  log `[EMAIL] Confirmation sent to ${order.email}`
+})
+
+bus.once("app:start", () => {
+  log "[APP] Application started (fires once)"
+})
+
+log "=== Emitting events ==="
+bus.emit("app:start")
+bus.emit("app:start")
+
+bus.emit("user:login", { id: 1, name: "Alice" })
+bus.emit("user:login", { id: 2, name: "Bob"   })
+
+bus.emit("order:placed", { id: 1001, total: 49.99,  email: "alice@example.com" })
+bus.emit("order:placed", { id: 1002, total: 120.00, email: "bob@example.com"   })
+
+log `\nListeners on user:login: ${bus.count("user:login")}`

@@ -1,8 +1,8 @@
 {
   "name": "@david0dev/ntl-lang",
-  "version": "3.5.0",
-  "description": "NTL \u2014 A programming language for teams that ship. Fast, typed, Node.js compatible.",
-  "author": "David Dev <github.com/Megamexlevi2>",
+  "version": "3.5.2",
+  "description": "NTL — A programming language for teams that ship. Fast, typed, Node.js compatible.",
+  "author": "David Dev (https://github.com/Megamexlevi2)",
   "license": "Apache-2.0",
   "main": "main.js",
   "bin": {

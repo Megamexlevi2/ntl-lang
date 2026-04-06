@@ -1,0 +1,14 @@
+fn add(a, b)      { return a + b }
+fn subtract(a, b) { return a - b }
+fn multiply(a, b) { return a * b }
+fn divide(a, b) {
+  guard b !== 0 else { return null }
+  return a / b
+}
+fn power(base, exp) { return Math.pow(base, exp) }
+fn clamp(value, minVal, maxVal) {
+  if value < minVal { return minVal }
+  if value > maxVal { return maxVal }
+  return value
+}
+export { add, subtract, multiply, divide, power, clamp }

@@ -1,0 +1,41 @@
+class Animal {
+  init(name, sound) {
+    this.name  = name
+    this.sound = sound
+  }
+
+  speak() {
+    return `${this.name} says ${this.sound}!`
+  }
+
+  toString() {
+    return `Animal(${this.name})`
+  }
+}
+
+class Dog extends Animal {
+  init(name, breed) {
+    super(name, "Woof")
+    this.breed = breed
+  }
+
+  fetch(item) {
+    return `${this.name} fetches the ${item}!`
+  }
+}
+
+val dog = new Dog("Rex", "Labrador")
+log dog.speak()
+log dog.fetch("ball")
+log `Breed: ${dog.breed}`
+
+log ""
+val animals = [
+  new Animal("Cat", "Meow"),
+  new Animal("Cow", "Moo"),
+  new Dog("Buddy", "Poodle"),
+]
+
+each a in animals {
+  log a.speak()
+}

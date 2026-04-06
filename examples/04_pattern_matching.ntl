@@ -1,0 +1,60 @@
+fn classify(value) {
+  return match value {
+    case 0  => { "zero" }
+    case 1  => { "one"  }
+    default => { "other: " + value }
+  }
+}
+
+fn describeType(x) {
+  return match typeof x {
+    case "string"  => { `string, length ${x.length}` }
+    case "number"  => { `number: ${x}` }
+    case "boolean" => { `boolean: ${x}` }
+    default        => { "other" }
+  }
+}
+
+fn httpStatus(code) {
+  if code === 200   { return "OK" }
+  elif code === 201 { return "Created" }
+  elif code === 400 { return "Bad Request" }
+  elif code === 401 { return "Unauthorized" }
+  elif code === 404 { return "Not Found" }
+  elif code === 500 { return "Internal Server Error" }
+  elif code >= 500  { return `Server Error (${code})` }
+  elif code >= 400  { return `Client Error (${code})` }
+  elif code >= 300  { return `Redirect (${code})` }
+  else              { return `Unknown (${code})` }
+}
+
+fn grade(score) {
+  if score >= 90 { return "A" }
+  elif score >= 80 { return "B" }
+  elif score >= 70 { return "C" }
+  elif score >= 60 { return "D" }
+  else             { return "F" }
+}
+
+log "=== match ==="
+each n in [0, 1, 42] {
+  log classify(n)
+}
+
+log ""
+log "=== typeof match ==="
+each v in ["hello", 42, true] {
+  log describeType(v)
+}
+
+log ""
+log "=== HTTP status (elif chain) ==="
+each code in [200, 201, 404, 500, 503, 301] {
+  log `${code}: ${httpStatus(code)}`
+}
+
+log ""
+log "=== grades (elif chain) ==="
+each score in [95, 83, 71, 65, 45] {
+  log `${score} → ${grade(score)}`
+}

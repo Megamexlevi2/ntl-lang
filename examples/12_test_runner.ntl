@@ -1,0 +1,104 @@
+val { suite, test, run, assert } = require("ntl:test")
+
+suite("String utilities", (s) => {
+  s.test("capitalize first letter", (t) => {
+    fn capitalize(str) {
+      return str[0].toUpperCase() + str.slice(1)
+    }
+    t.equal(capitalize("hello"), "Hello")
+    t.equal(capitalize("world"), "World")
+    t.equal(capitalize("ntl"),   "Ntl")
+  })
+
+  s.test("reverse a string", (t) => {
+    fn reverse(str) {
+      return str.split("").reverse().join("")
+    }
+    t.equal(reverse("hello"), "olleh")
+    t.equal(reverse("abc"),   "cba")
+    t.equal(reverse(""),      "")
+  })
+
+  s.test("count occurrences", (t) => {
+    fn count(str, char) {
+      return str.split("").filter(c => c === char).length
+    }
+    t.equal(count("hello", "l"), 2)
+    t.equal(count("banana", "a"), 3)
+    t.equal(count("xyz", "q"), 0)
+  })
+})
+
+suite("Number utilities", (s) => {
+  s.test("factorial", (t) => {
+    fn factorial(n) {
+      if n <= 1 { return 1 }
+      return n * factorial(n - 1)
+    }
+    t.equal(factorial(0), 1)
+    t.equal(factorial(1), 1)
+    t.equal(factorial(5), 120)
+    t.equal(factorial(10), 3628800)
+  })
+
+  s.test("fibonacci", (t) => {
+    fn fib(n) {
+      if n <= 1 { return n }
+      return fib(n - 1) + fib(n - 2)
+    }
+    t.equal(fib(0), 0)
+    t.equal(fib(1), 1)
+    t.equal(fib(7), 13)
+    t.equal(fib(10), 55)
+  })
+
+  s.test("clamp", (t) => {
+    fn clamp(v, lo, hi) {
+      if v < lo { return lo }
+      if v > hi { return hi }
+      return v
+    }
+    t.equal(clamp(5, 0, 10),  5)
+    t.equal(clamp(-5, 0, 10), 0)
+    t.equal(clamp(15, 0, 10), 10)
+  })
+})
+
+suite("Array utilities", (s) => {
+  s.test("flatten one level", (t) => {
+    fn flatten(arr) {
+      return arr.reduce((acc, v) => acc.concat(v), [])
+    }
+    t.deepEqual(flatten([[1, 2], [3, 4]]), [1, 2, 3, 4])
+    t.deepEqual(flatten([[1], [2], [3]]), [1, 2, 3])
+  })
+
+  s.test("unique values", (t) => {
+    fn unique(arr) {
+      return [...new Set(arr)]
+    }
+    t.deepEqual(unique([1, 2, 2, 3, 3, 3]), [1, 2, 3])
+    t.deepEqual(unique(["a", "b", "a"]), ["a", "b"])
+  })
+
+  s.test("groupBy", (t) => {
+    fn groupBy(arr, key) {
+      return arr.reduce((acc, item) => {
+        val k = item[key]
+        if !acc[k] { acc[k] = [] }
+        acc[k].push(item)
+        return acc
+      }, {})
+    }
+    val people = [
+      { name: "Alice", role: "admin" },
+      { name: "Bob",   role: "user"  },
+      { name: "Carol", role: "admin" },
+    ]
+    val grouped = groupBy(people, "role")
+    t.equal(grouped.admin.length, 2)
+    t.equal(grouped.user.length,  1)
+  })
+})
+
+run()

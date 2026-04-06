@@ -1,0 +1,39 @@
+val { Cache }  = require("ntl:cache")
+val { Logger } = require("ntl:logger")
+
+val log_ = new Logger({ level: "info", prefix: "App" })
+val store = new Cache({ maxSize: 100, ttl: 5000 })
+
+fn expensiveCompute(key) {
+  log_.info(`Computing value for: ${key}`)
+  return `result_for_${key}_at_${Date.now()}`
+}
+
+fn getOrCompute(key) {
+  val cached = store.get(key)
+  if cached !== null && cached !== undefined {
+    log_.debug(`Cache hit:  ${key}`)
+    return cached
+  }
+  val value = expensiveCompute(key)
+  store.set(key, value)
+  return value
+}
+
+log_.info("Starting cache demo")
+
+val r1 = getOrCompute("user:42")
+val r2 = getOrCompute("user:42")
+val r3 = getOrCompute("post:7")
+val r4 = getOrCompute("user:42")
+
+log_.info(`Same result r1===r2: ${r1 === r2}`)
+log_.info(`Different  r1===r3: ${r1 === r3}`)
+log_.info(`Same again r1===r4: ${r1 === r4}`)
+log_.info(`Cache size: ${store.size}`)
+
+store.delete("user:42")
+log_.info(`After delete, size: ${store.size}`)
+
+val r5 = getOrCompute("user:42")
+log_.info(`r1===r5 (recomputed): ${r1 === r5}`)

@@ -1,0 +1,80 @@
+log "=== unless ==="
+val logged = false
+unless logged {
+  log "Not logged in — redirect to login"
+}
+
+log ""
+log "=== guard ==="
+fn divide(a, b) {
+  guard b !== 0 else {
+    log "Error: division by zero"
+    return null
+  }
+  return a / b
+}
+log divide(10, 2)
+log divide(10, 0)
+
+log ""
+log "=== defer ==="
+fn withCleanup() {
+  defer { log "Cleanup: connection closed" }
+  log "Opening connection..."
+  log "Running query..."
+}
+withCleanup()
+
+log ""
+log "=== try? ==="
+fn safeParse(str) {
+  return try? JSON.parse(str)
+}
+log safeParse('{"ok":true}')
+log safeParse("not json at all")
+
+log ""
+log "=== each + repeat ==="
+val fruits = ["apple", "banana", "cherry"]
+each fruit in fruits {
+  log `  ${fruit}`
+}
+
+var counter = 0
+repeat 5 { counter++ }
+log `counter after repeat 5: ${counter}`
+
+log ""
+log "=== range ==="
+each i in range(5) {
+  log `  step ${i}`
+}
+
+log ""
+log "=== match ==="
+fn label(s) {
+  return match s {
+    case "a" => { "alpha" }
+    case "b" => { "beta"  }
+    default  => { "other" }
+  }
+}
+each s in ["a", "b", "z"] {
+  log `${s} → ${label(s)}`
+}
+
+log ""
+log "=== immutable ==="
+immutable val config = { host: "localhost", port: 3000 }
+log "config:", config.host, config.port
+
+log ""
+log "=== @memo decorator ==="
+@memo
+fn fib(n) {
+  if n <= 1 { return n }
+  return fib(n - 1) + fib(n - 2)
+}
+log "fib(10):", fib(10)
+log "fib(30):", fib(30)
+log "fib(40):", fib(40)

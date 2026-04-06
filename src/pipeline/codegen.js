@@ -28,27 +28,7 @@ class CodeGen {
     switch(node.type) {
       case 'Program': {
         this._reassigned = this._collectReassigned(node);
-        this._usesNTLModules = false;
-        const { resolveModuleName } = require('../runtime/resolver');
-        const _scanNTL = (n) => {
-          if (!n || typeof n !== 'object') return;
-          if (n.type === 'ImportDecl' && resolveModuleName(n.source)) { this._usesNTLModules = true; return; }
-          if (n.type === 'NTLRequire' || n.type === 'NTLRequireExpr') { this._usesNTLModules = true; return; }
-          if (n.type === 'RequireExpr' && resolveModuleName(n.source)) { this._usesNTLModules = true; return; }
-          if (n.type === 'NaxImportExpr') { this._usesNTLModules = true; return; }
-          for (const key of Object.keys(n)) {
-            if (key === 'type' || key === 'line' || key === 'col') continue;
-            const v = n[key];
-            if (Array.isArray(v)) { for (const child of v) _scanNTL(child); }
-            else if (v && typeof v === 'object' && v.type) _scanNTL(v);
-          }
-        };
-        _scanNTL(node);
         const body = node.body.map(s=>this.genStmt(s,0)).filter(Boolean).join('');
-        if (this._usesNTLModules) {
-          const { PREAMBLE } = require('../runtime/resolver');
-          return PREAMBLE + '\n\n' + body;
-        }
         return body;
       }
       default: return this.genStmt(node,pad);
@@ -524,7 +504,6 @@ class CodeGen {
 
   _fixSource(source) {
     if (!source) return source;
-    if (source.endsWith('.ntl')) return source.slice(0,-4) + '.js';
     return source;
   }
 
@@ -532,12 +511,17 @@ class CodeGen {
     const p=this.pad(pad);
     if(node.typeOnly) return '';
     const { resolveModuleName } = require('../runtime/resolver');
-    const src = this._fixSource(node.source);
-    const ntlName = resolveModuleName(src);
-    if(ntlName) this._usesNTLModules = true;
-    const requireExpr = ntlName
-      ? `__ntlRequire(${JSON.stringify('modules/' + ntlName + '.js')})`
-      : `require(${JSON.stringify(src)})`;
+    const rawSrc = node.source || '';
+    const ntlName = resolveModuleName(rawSrc);
+    let requireExpr;
+    if (ntlName) {
+      requireExpr = `require(${JSON.stringify('ntl:' + ntlName)})`;
+    } else if (rawSrc.endsWith('.ntl') && (rawSrc.startsWith('./') || rawSrc.startsWith('../'))) {
+      requireExpr = `require(${JSON.stringify(rawSrc)})`;
+    } else {
+      const src = rawSrc.endsWith('.ntl') ? rawSrc.slice(0,-4)+'.js' : rawSrc;
+      requireExpr = `require(${JSON.stringify(src)})`;
+    }
     if(node.namespace) return `${p}const ${node.namespace} = ${requireExpr};\n`;
     if(node.defaultImport&&!node.specifiers?.length) return `${p}const ${node.defaultImport} = ${requireExpr};\n`;
     if(node.defaultImport&&node.specifiers?.length) {
@@ -567,11 +551,7 @@ class CodeGen {
 
   genNTLRequire(node, pad) {
     const p=this.pad(pad);
-    this._usesNTLModules = true;
-    const { NTL_MODULES } = require('../runtime/resolver');
     const lines = node.modules.map(m => {
-      const relPath = NTL_MODULES[m];
-      if(relPath) return `${p}const ${m} = __ntlRequire(${JSON.stringify(relPath + '.js')});`;
       return `${p}const ${m} = require(${JSON.stringify('ntl:' + m)});`;
     });
     return lines.join('\n') + '\n';
@@ -837,21 +817,23 @@ class CodeGen {
       case 'RangeExpr': return this.genRange(node);
       case 'SleepExpr':    return `(await new Promise((_r) => setTimeout(_r, ${this.genExpr(node.ms)})))`;
       case 'RequireExpr': {
-        const { resolveModuleName, NTL_MODULES } = require('../runtime/resolver');
-        const ntlName = resolveModuleName(node.source);
-        if (ntlName && NTL_MODULES[ntlName]) {
-          return `__ntlRequire(${JSON.stringify(NTL_MODULES[ntlName] + '.js')})`;
+        const { resolveModuleName } = require('../runtime/resolver');
+        const src = node.source || '';
+        const ntlName = resolveModuleName(src);
+        if (ntlName) {
+          return `require(${JSON.stringify('ntl:' + ntlName)})`;
         }
-        return `require(${JSON.stringify(this._fixSource(node.source))})`;
+        if (src.endsWith('.ntl') && (src.startsWith('./') || src.startsWith('../'))) {
+          return `require(${JSON.stringify(src)})`;
+        }
+        const fixedSrc = src.endsWith('.ntl') ? src.slice(0,-4)+'.js' : src;
+        return `require(${JSON.stringify(fixedSrc)})`;
       }
       case 'NaxImportExpr':return this.genNaxImport(node);
       case 'NTLRequireExpr': {
-        this._usesNTLModules = true;
-        const { NTL_MODULES } = require('../runtime/resolver');
         const m = (node.modules||[])[0];
         if(!m) return 'undefined';
-        const rel = NTL_MODULES[m];
-        return rel ? `__ntlRequire(${JSON.stringify(rel + '.js')})` : `require(${JSON.stringify('ntl:'+m)})`;
+        return `require(${JSON.stringify('ntl:' + m)})`;
       }
       case 'RegexLit': return `/${node.pattern}/${node.flags}`;
       case 'ChannelExpr':  return `{ _queue: [], _listeners: [], send(v) { if (this._listeners.length) { this._listeners.shift()(v); } else { this._queue.push(v); } }, receive() { return new Promise(r => { if (this._queue.length) r(this._queue.shift()); else this._listeners.push(r); }) } }`;

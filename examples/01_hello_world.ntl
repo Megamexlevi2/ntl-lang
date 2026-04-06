@@ -1,0 +1,11 @@
+fn greet(name: string) -> string {
+  return `Hello, ${name}!`
+}
+
+val message = greet("World")
+log message
+
+val names = ["Alice", "Bob", "Charlie"]
+each name in names {
+  log greet(name)
+}

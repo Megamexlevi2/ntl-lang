@@ -26,21 +26,17 @@ const NTL_MODULES = {
   gameengine: 'modules/game',
 };
 
-function _aliases(mods) {
-  const out = {};
-  for (const [k, v] of Object.entries(mods)) {
-    out['ntl:' + k] = k;
-    out['ntl-lang/' + k] = k;
-    out['@david0dev/ntl-lang/' + k] = k;
-  }
-  return out;
-}
-
-const NTL_ALIASES = _aliases(NTL_MODULES);
+const NTL_ALIASES = Object.fromEntries(
+  Object.keys(NTL_MODULES).flatMap(k => [
+    ['ntl:' + k, k],
+    ['ntl-lang/' + k, k],
+    ['@david0dev/ntl-lang/' + k, k],
+  ])
+);
 
 function resolveModuleName(source) {
   if (NTL_ALIASES[source]) return NTL_ALIASES[source];
-  if (source.startsWith('ntl:')) return source.slice(4);
+  if (source && source.startsWith('ntl:')) return source.slice(4);
   return null;
 }
 
@@ -63,46 +59,10 @@ function loadModule(source) {
   }
 }
 
-function makePreamble(ntlDir) {
-  const escaped = JSON.stringify(ntlDir || NTL_DIR);
-  const lines = [
-    '',
-    'var __ntlDir=(function(){',
-    "  var _p=require('path');",
-    "  try{return _p.dirname(require.resolve('ntl-lang/package.json'));}catch(_){}",
-    '  try{',
-    "    var _r=require('fs').realpathSync(process.argv[1]||'');",
-    "    var _m=_r.match(/^(.*?node_modules[\\/\\\\]ntl-lang)/);",
-    '    if(_m)return _m[1];',
-    '  }catch(_){}',
-    '  return ' + escaped + ';',
-    '})();',
-    "var __ntlSelfHosted=new Set([" + "'cache','events','logger','validate','env','queue','crypto','fs','android','test','ai','mail','http','ws','db','obf','web'" + "]);" ,
-    "var __ntlRequire=function(m){",
-    "  var _base=m.replace(/\\.js$/,'').split('/').pop();",
-    "  if(__ntlSelfHosted.has(_base)){",
-    "    var _loaded=require(require('path').join(__ntlDir,'src','runtime','loader.js')).loadStdlibModule(_base);",
-    "    return _loaded;",
-    "  }",
-    "  return require(require('path').join(__ntlDir,m));",
-    "};",
-  ];
-  return lines.join('\n');
-}
-
-const PREAMBLE = makePreamble(NTL_DIR);
-
-function generateNTLModuleImports(modules) {
-  return modules.map(m => {
-    const relPath = NTL_MODULES[m];
-    if (relPath) return "const " + m + " = __ntlRequire('" + relPath + ".js');";
-    return "const " + m + " = require('ntl:' + " + JSON.stringify(m) + ");";
-  }).join('\n');
-}
-
+const PREAMBLE = '';
 const NAX_RUNTIME_PATH = path.join(__dirname, 'nax.js');
 
 module.exports = {
-  resolveModuleName, resolveToPath, loadModule, generateNTLModuleImports,
-  makePreamble, PREAMBLE, NTL_MODULES, NTL_ALIASES, NTL_DIR, NAX_RUNTIME_PATH,
+  resolveModuleName, resolveToPath, loadModule,
+  PREAMBLE, NTL_MODULES, NTL_ALIASES, NTL_DIR, NAX_RUNTIME_PATH,
 };

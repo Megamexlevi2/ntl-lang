@@ -1,0 +1,19 @@
+val math    = require("./math.ntl")
+val strings = require("./strings.ntl")
+
+log "=== Math ==="
+log "add(3, 4)          =", math.add(3, 4)
+log "subtract(10, 3)    =", math.subtract(10, 3)
+log "multiply(6, 7)     =", math.multiply(6, 7)
+log "divide(15, 3)      =", math.divide(15, 3)
+log "divide(5, 0)       =", math.divide(5, 0)
+log "power(2, 10)       =", math.power(2, 10)
+log "clamp(150, 0, 100) =", math.clamp(150, 0, 100)
+
+log ""
+log "=== Strings ==="
+log strings.capitalize("hello world")
+log strings.titleCase("the quick brown fox")
+log strings.truncate("This is a very long sentence that needs trimming", 25)
+log strings.slugify("Hello World! This is NTL 2026")
+log "Word count:", strings.countWords("The quick brown fox jumps over the lazy dog")

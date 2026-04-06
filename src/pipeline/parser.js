@@ -476,25 +476,33 @@ class Parser {
     return new ASTNode('EnumDecl',{name,members,isConst:false},t.line,t.col);
   }
   parseIf() {
-    const t=this.advance(); const test=this.parseExpr();
-    const consequent=this.parseBlock(); let alternate=null;
-    if(this.checkKw('elif')){
+    const t=this.advance();
+    const test=this.parseExpr();
+    const consequent=this.parseBlock();
+    let alternate=null;
+    if(this.checkKw('elif')) {
       const et=this.advance();
       const etest=this.parseExpr();
-      const econseq=this.parseBlock(); let ealt=null;
-      if(this.checkKw('elif')){
-        ealt=this.parseIf.call(Object.assign(Object.create(Object.getPrototypeOf(this)),this,{advance:()=>{this.pos--;return et;}}));
-      }
-      let chain=null;
-      if(this.checkKw('elif')){ const et2=this.advance();const et2test=this.parseExpr();const et2block=this.parseBlock();chain=new ASTNode('IfStmt',{test:et2test,consequent:et2block,alternate:null},et2.line,et2.col); }
-      if(!chain && this.eatIf(TokenType.KEYWORD,'else')){ chain=this.checkKw('if')?this.parseIf():this.parseBlock(); }
-      econseq; ealt=chain;
+      const econseq=this.parseBlock();
+      const ealt=this._parseElseChain();
       alternate=new ASTNode('IfStmt',{test:etest,consequent:econseq,alternate:ealt},et.line,et.col);
-    } else if(this.eatIf(TokenType.KEYWORD,'else')){
-      if(this.checkKw('if')) alternate=this.parseIf();
-      else alternate=this.parseBlock();
+    } else if(this.eatIf(TokenType.KEYWORD,'else')) {
+      alternate=this.checkKw('if')?this.parseIf():this.parseBlock();
     }
     return new ASTNode('IfStmt',{test,consequent,alternate},t.line,t.col);
+  }
+  _parseElseChain() {
+    if(this.checkKw('elif')) {
+      const et=this.advance();
+      const etest=this.parseExpr();
+      const econseq=this.parseBlock();
+      const ealt=this._parseElseChain();
+      return new ASTNode('IfStmt',{test:etest,consequent:econseq,alternate:ealt},et.line,et.col);
+    }
+    if(this.eatIf(TokenType.KEYWORD,'else')) {
+      return this.checkKw('if')?this.parseIf():this.parseBlock();
+    }
+    return null;
   }
   parseUnless() {
     const t=this.advance(); const test=this.parseExpr();

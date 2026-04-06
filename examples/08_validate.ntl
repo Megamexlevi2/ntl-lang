@@ -1,0 +1,49 @@
+val validate = require("ntl:validate")
+
+val UserSchema = validate.object({
+  name:     validate.string().min(2).max(50),
+  email:    validate.string().email(),
+  age:      validate.number().min(0).max(150).optional(),
+  role:     validate.enum(["admin", "user", "guest"]).default("user"),
+  password: validate.string().min(8),
+})
+
+fn tryValidate(label, data) {
+  log `\n--- ${label} ---`
+  val result = UserSchema.validate(data)
+  if result.ok {
+    log "Valid:", result.value
+  } else {
+    log "Errors:"
+    each err in result.errors {
+      log `  - ${err.field}: ${err.message}`
+    }
+  }
+}
+
+tryValidate("Valid user", {
+  name:     "Alice",
+  email:    "alice@example.com",
+  age:      28,
+  role:     "admin",
+  password: "securepass123",
+})
+
+tryValidate("Missing required fields", {
+  name: "B",
+  email: "not-an-email",
+  password: "short",
+})
+
+tryValidate("Wrong role", {
+  name:     "Charlie",
+  email:    "charlie@example.com",
+  role:     "superuser",
+  password: "goodpassword",
+})
+
+tryValidate("Uses default role", {
+  name:     "Dave",
+  email:    "dave@example.com",
+  password: "mypassword1",
+})

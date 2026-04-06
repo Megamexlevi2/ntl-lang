@@ -1,0 +1,19 @@
+fn capitalize(str) {
+  guard str.length > 0 else { return str }
+  return str[0].toUpperCase() + str.slice(1).toLowerCase()
+}
+fn titleCase(str) {
+  return str.split(" ").map(w => capitalize(w)).join(" ")
+}
+fn truncate(str, maxLen, suffix) {
+  val end = suffix || "..."
+  guard str.length > maxLen else { return str }
+  return str.slice(0, maxLen - end.length) + end
+}
+fn slugify(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+}
+fn countWords(str) {
+  return str.trim().split(/\s+/).filter(w => w.length > 0).length
+}
+export { capitalize, titleCase, truncate, slugify, countWords }

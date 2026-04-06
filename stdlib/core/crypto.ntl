@@ -36,6 +36,11 @@ fn hmacSha512(key, data) {
 
 *// ─── Random & IDs ────────────────────────────────────────────────────
 
+*// randomBytes(16) → hex string of N random bytes
+fn randomBytes(n) {
+  return _c.randomBytes(n || 16).toString("hex")
+}
+
 *// uuid() → "550e8400-e29b-41d4-a716-446655440000"
 fn uuid() {
   val b = _c.randomBytes(16)
@@ -152,7 +157,7 @@ fn checksum(data) {
 }
 
 export {
-  sha256, sha512, md5, sha1, hmacSha256, hmacSha512,
+  sha256, sha512, md5, sha1, hmacSha256, hmacSha512, randomBytes,
   uuid, randomInt, token,
   encryptAES, decryptAES,
   hashPassword, verifyPassword,

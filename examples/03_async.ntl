@@ -1,0 +1,31 @@
+async fn fetchUser(id: number) {
+  await sleep(10)
+  return {
+    id,
+    name: `User ${id}`,
+    email: `user${id}@example.com`,
+    active: true,
+  }
+}
+
+async fn fetchAll(ids) {
+  val tasks  = ids.map(id => fetchUser(id))
+  val users  = await Promise.all(tasks)
+  return users
+}
+
+async fn main() {
+  val user = await fetchUser(1)
+  log "Single user:", user.name, user.email
+
+  val users = await fetchAll([1, 2, 3, 4, 5])
+  log `Fetched ${users.length} users:`
+  each u in users {
+    log ` - ${u.name} <${u.email}>`
+  }
+
+  val active = users.filter(u => u.active)
+  log `Active users: ${active.length}`
+}
+
+main()
