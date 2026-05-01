@@ -1,141 +1,173 @@
 'use strict';
-// ntl:events — Production event emitter / pub-sub
+
+// ntl:events — event emitter with typed events, wildcard, history replay
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
 
 class EventEmitter {
-  constructor(options) {
-    options = options || {};
-    this._events = new Map();
-    this._maxListeners = options.maxListeners || 100;
-    this._onError = null;
+  constructor(opts) {
+    opts              = opts || {};
+    this._listeners   = new Map();
+    this._onceMap     = new WeakSet();
+    this._maxListeners = opts.maxListeners || 100;
+    this._history     = opts.history ? [] : null;
+    this._historyMax  = opts.historyMax || 100;
+    this._wildcard    = opts.wildcard !== false;
+    this._delimiter   = opts.delimiter || ':';
   }
 
-  on(event, listener, options) {
-    options = options || {};
-    if (!this._events.has(event)) this._events.set(event, []);
-    const listeners = this._events.get(event);
+  on(event, fn, opts) {
+    if (typeof fn !== 'function') throw new TypeError('Listener must be a function');
+    const listeners = this._listeners.get(event) || [];
     if (listeners.length >= this._maxListeners) {
-      console.warn(`[ntl:events] MaxListeners (${this._maxListeners}) exceeded for event "${event}"`);
+      process.stderr.write(`[ntl:events] Warning: possible memory leak — ${event} has ${listeners.length + 1} listeners\n`);
     }
-    listeners.push({ fn: listener, once: options.once || false, priority: options.priority || 0 });
-    // Sort by priority descending
-    listeners.sort((a, b) => b.priority - a.priority);
+    if (opts && opts.once) this._onceMap.add(fn);
+    if (opts && opts.prepend) listeners.unshift(fn);
+    else listeners.push(fn);
+    this._listeners.set(event, listeners);
     return this;
   }
 
-  once(event, listener) { return this.on(event, listener, { once: true }); }
-  prependListener(event, listener) { return this.on(event, listener, { priority: 1 }); }
+  once(event, fn)   { return this.on(event, fn, { once: true }); }
+  prependListener(event, fn) { return this.on(event, fn, { prepend: true }); }
+  prependOnceListener(event, fn) { return this.on(event, fn, { prepend: true, once: true }); }
 
-  off(event, listener) {
-    if (!this._events.has(event)) return this;
-    if (!listener) { this._events.delete(event); return this; }
-    const listeners = this._events.get(event);
-    const idx = listeners.findIndex(l => l.fn === listener);
-    if (idx >= 0) listeners.splice(idx, 1);
-    if (listeners.length === 0) this._events.delete(event);
+  off(event, fn) {
+    if (!fn) { this._listeners.delete(event); return this; }
+    const list = this._listeners.get(event);
+    if (!list) return this;
+    const idx = list.lastIndexOf(fn);
+    if (idx !== -1) list.splice(idx, 1);
+    if (!list.length) this._listeners.delete(event);
     return this;
   }
 
   removeAllListeners(event) {
-    if (event) this._events.delete(event);
-    else this._events.clear();
+    if (event) this._listeners.delete(event);
+    else       this._listeners.clear();
     return this;
   }
 
   emit(event, ...args) {
-    if (!this._events.has(event)) {
-      if (event === 'error' && args[0] instanceof Error) throw args[0];
-      return false;
+    if (this._history) {
+      this._history.push({ event, args, ts: Date.now() });
+      if (this._history.length > this._historyMax) this._history.shift();
     }
-    const listeners = [...this._events.get(event)];
-    const toRemove = [];
-    for (const l of listeners) {
-      try {
-        l.fn(...args);
-        if (l.once) toRemove.push(l.fn);
-      } catch (err) {
-        if (this._onError) this._onError(err, event);
-        else throw err;
+
+    const list   = this._listeners.get(event) || [];
+    const remove = [];
+
+    for (const fn of [...list]) {
+      try { fn(...args); }
+      catch (e) { process.nextTick(() => { throw e; }); }
+      if (this._onceMap.has(fn)) remove.push(fn);
+    }
+
+    for (const fn of remove) { this.off(event, fn); this._onceMap.delete(fn); }
+
+    if (this._wildcard && event.includes(this._delimiter)) {
+      const parts = event.split(this._delimiter);
+      const wildcards = this._getWildcardListeners(parts);
+      for (const [fn, pattern] of wildcards) {
+        try { fn(event, ...args); }
+        catch (e) { process.nextTick(() => { throw e; }); }
+        if (this._onceMap.has(fn)) { this.off(pattern, fn); this._onceMap.delete(fn); }
       }
     }
-    for (const fn of toRemove) this.off(event, fn);
-    return true;
+
+    return list.length > 0;
   }
 
-  async emitAsync(event, ...args) {
-    if (!this._events.has(event)) return false;
-    const listeners = [...this._events.get(event)];
-    const toRemove = [];
-    for (const l of listeners) {
-      try {
-        await l.fn(...args);
-        if (l.once) toRemove.push(l.fn);
-      } catch (err) {
-        if (this._onError) await this._onError(err, event);
-        else throw err;
-      }
-    }
-    for (const fn of toRemove) this.off(event, fn);
-    return true;
-  }
-
-  emitParallel(event, ...args) {
-    if (!this._events.has(event)) return Promise.resolve(false);
-    const listeners = [...this._events.get(event)];
-    const toRemove = listeners.filter(l => l.once).map(l => l.fn);
-    const promises = listeners.map(l => Promise.resolve().then(() => l.fn(...args)));
-    return Promise.all(promises).then(() => {
-      for (const fn of toRemove) this.off(event, fn);
-      return true;
+  emitAsync(event, ...args) {
+    const list    = this._listeners.get(event) || [];
+    const results = list.map(fn => {
+      try { return Promise.resolve(fn(...args)); }
+      catch(e) { return Promise.reject(e); }
     });
+    return Promise.allSettled(results);
   }
 
-  listenerCount(event) {
-    return this._events.has(event) ? this._events.get(event).length : 0;
-  }
+  emitError(err) { return this.emit('error', err); }
 
-  eventNames() { return [...this._events.keys()]; }
-
-  waitFor(event, timeout) {
+  waitFor(event, opts) {
+    opts = opts || {};
     return new Promise((resolve, reject) => {
       let timer;
       const handler = (...args) => {
         if (timer) clearTimeout(timer);
-        resolve(args.length === 1 ? args[0] : args);
+        resolve(args.length <= 1 ? args[0] : args);
       };
-      this.once(event, handler);
-      if (timeout) {
+      if (opts.timeout) {
         timer = setTimeout(() => {
           this.off(event, handler);
-          reject(new Error(`[ntl:events] Timeout waiting for "${event}" after ${timeout}ms`));
-        }, timeout);
+          reject(new Error(`Timeout waiting for event: ${event}`));
+        }, opts.timeout);
       }
+      this.once(event, handler);
     });
   }
 
-  pipe(target, event) {
-    this.on(event || '*', (...args) => target.emit(event || args[0], ...(event ? args : args.slice(1))));
+  replayHistory(listener) {
+    if (!this._history) return;
+    for (const { event, args } of this._history) {
+      listener(event, ...args);
+    }
+  }
+
+  clearHistory() { if (this._history) this._history.length = 0; }
+
+  listenerCount(event) { return (this._listeners.get(event) || []).length; }
+  listeners(event)     { return [...(this._listeners.get(event) || [])]; }
+  eventNames()         { return [...this._listeners.keys()]; }
+
+  setMaxListeners(n) { this._maxListeners = n; return this; }
+
+  pipe(target) {
+    for (const [event, list] of this._listeners.entries()) {
+      list.forEach(fn => target.on(event, fn));
+    }
     return this;
   }
 
-  onError(handler) { this._onError = handler; return this; }
-  setMaxListeners(n) { this._maxListeners = n; return this; }
-}
-
-// ── Event Bus (global singleton for app-wide events) ────────────────────────
-
-class EventBus extends EventEmitter {
-  constructor() { super(); this._namespaces = new Map(); }
-
-  namespace(name) {
-    if (!this._namespaces.has(name)) {
-      this._namespaces.set(name, new EventEmitter());
+  _getWildcardListeners(parts) {
+    const result = [];
+    for (const [pattern, list] of this._listeners.entries()) {
+      if (!pattern.includes('*')) continue;
+      const patParts = pattern.split(this._delimiter);
+      if (this._matchWildcard(parts, patParts)) {
+        list.forEach(fn => result.push([fn, pattern]));
+      }
     }
-    return this._namespaces.get(name);
+    return result;
   }
 
-  ns(name) { return this.namespace(name); }
+  _matchWildcard(parts, pattern) {
+    if (pattern[pattern.length - 1] === '**') {
+      return parts.slice(0, pattern.length - 1).every((p, i) => pattern[i] === '*' || pattern[i] === p);
+    }
+    if (parts.length !== pattern.length) return false;
+    return parts.every((p, i) => pattern[i] === '*' || pattern[i] === p);
+  }
 }
 
-const bus = new EventBus();
+class TypedEmitter extends EventEmitter {
+  constructor(schema, opts) {
+    super(opts);
+    this._schema = schema || {};
+  }
 
-module.exports = { EventEmitter, EventBus, bus };
+  emit(event, ...args) {
+    if (this._schema[event]) {
+      const validator = this._schema[event];
+      if (typeof validator === 'function') {
+        const ok = validator(...args);
+        if (ok === false) throw new TypeError(`Invalid payload for event: ${event}`);
+      }
+    }
+    return super.emit(event, ...args);
+  }
+}
+
+function createEmitter(opts) { return new EventEmitter(opts); }
+
+module.exports = { EventEmitter, TypedEmitter, createEmitter };

@@ -1,0 +1,121 @@
+# NTL Language Keywords
+# This file defines every keyword the lexer recognizes.
+# Adding a word here makes it reserved — you cannot use it as a variable name.
+
+variables:
+  - var
+  - val
+  - let
+  - const
+
+functions:
+  - fn
+  - async
+  - await
+  - return
+  - yield
+
+control_flow:
+  - if
+  - else
+  - elif
+  - unless
+  - while
+  - for
+  - loop
+  - in
+  - of
+  - break
+  - continue
+  - do
+  - repeat
+  - each
+  - guard
+  - defer
+
+pattern_matching:
+  - match
+  - case
+  - default
+  - when
+
+exceptions:
+  - try
+  - catch
+  - finally
+  - raise
+  - throw
+
+classes:
+  - class
+  - extends
+  - new
+  - this
+  - super
+  - abstract
+  - override
+  - static
+  - get
+  - set
+  - private
+  - public
+  - protected
+  - readonly
+  - interface
+  - implements
+  - trait
+
+types:
+  - typeof
+  - instanceof
+  - keyof
+  - infer
+  - type
+  - alias
+  - enum
+  - satisfies
+
+modules:
+  - import
+  - export
+  - from
+  - as
+  - require
+  - module
+  - namespace
+
+literals:
+  - true
+  - false
+  - null
+  - void
+  - undefined
+
+ntl_specific:
+  - log
+  - range
+  - sleep
+  - have
+  - ifhave
+  - ifset
+  - between
+  - matches
+  - startsWith
+  - endsWith
+  - is
+  - not
+  - state
+  - nax
+  - ntl
+  - spawn
+  - select
+  - channel
+  - component
+  - macro
+  - immutable
+  - freeze
+  - with
+  - using
+  - assert
+  - delete
+  - Not

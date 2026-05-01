@@ -1,213 +1,244 @@
 'use strict';
-// ntl:queue — Production job queue with retries, delays, priorities
+
+// ntl:queue — job queue with retries, delays, concurrency, priority, cron
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
 
 const { EventEmitter } = require('./events');
 
+const JOB_STATUS = { WAITING: 'waiting', ACTIVE: 'active', DONE: 'done', FAILED: 'failed', DELAYED: 'delayed' };
+
 class Job {
-  constructor(name, data, options) {
-    options = options || {};
-    this.id = options.id || (Date.now().toString(36) + Math.random().toString(36).slice(2));
-    this.name = name;
-    this.data = data;
-    this.priority = options.priority || 0;
-    this.delay = options.delay || 0;
-    this.timeout = options.timeout || 30000;
-    this.maxRetries = options.retries || 3;
-    this.backoff = options.backoff || 'exponential';
-    this.retryCount = 0;
-    this.status = 'waiting';
-    this.createdAt = Date.now();
-    this.startedAt = null;
-    this.finishedAt = null;
-    this.result = null;
-    this.error = null;
-    this.progress = 0;
-    this._resolve = null;
-    this._reject = null;
-    this._progressCbs = [];
+  constructor(id, data, opts) {
+    this.id          = id;
+    this.data        = data;
+    this.opts        = opts || {};
+    this.status      = JOB_STATUS.WAITING;
+    this.attempts    = 0;
+    this.maxAttempts = opts.retries !== undefined ? opts.retries + 1 : 1;
+    this.delay       = opts.delay   || 0;
+    this.priority    = opts.priority || 0;
+    this.timeout     = opts.timeout  || 0;
+    this.createdAt   = Date.now();
+    this.startedAt   = null;
+    this.finishedAt  = null;
+    this.error       = null;
+    this.result      = null;
+    this._runAt      = this.delay ? Date.now() + this.delay : 0;
+    this.progress    = 0;
+    this._progressCb = null;
   }
 
-  wait() {
-    return new Promise((resolve, reject) => {
-      this._resolve = resolve;
-      this._reject = reject;
-    });
-  }
+  isReady()   { return !this._runAt || Date.now() >= this._runAt; }
+  canRetry()  { return this.attempts < this.maxAttempts; }
 
-  onProgress(fn) { this._progressCbs.push(fn); return this; }
-  _setProgress(pct) {
-    this.progress = pct;
-    for (const fn of this._progressCbs) try { fn(pct, this); } catch {}
+  reportProgress(pct, data) {
+    this.progress = Math.min(100, Math.max(0, pct));
+    if (this._progressCb) this._progressCb(this.progress, data);
   }
 
   toJSON() {
     return {
-      id: this.id, name: this.name, status: this.status,
-      priority: this.priority, retryCount: this.retryCount,
-      createdAt: this.createdAt, startedAt: this.startedAt,
-      finishedAt: this.finishedAt, progress: this.progress,
-      result: this.result, error: this.error
+      id: this.id, data: this.data, status: this.status,
+      attempts: this.attempts, maxAttempts: this.maxAttempts,
+      delay: this.delay, priority: this.priority,
+      createdAt: this.createdAt, startedAt: this.startedAt, finishedAt: this.finishedAt,
+      error: this.error?.message, result: this.result, progress: this.progress,
     };
   }
 }
 
 class Queue extends EventEmitter {
-  constructor(name, options) {
+  constructor(name, opts) {
     super();
-    options = options || {};
-    this.name = name || 'default';
-    this._concurrency = options.concurrency || 1;
-    this._workers = {};
-    this._jobs = [];
-    this._active = new Map();
-    this._processed = [];
-    this._paused = false;
-    this._running = 0;
-    this._maxProcessed = options.maxProcessed || 1000;
-    this._stats = { completed: 0, failed: 0, retried: 0 };
+    this.name        = name || 'default';
+    this._opts       = opts || {};
+    this._concurrency = opts.concurrency   || 1;
+    this._retryDelay  = opts.retryDelay    || 1000;
+    this._rateLimit   = opts.rateLimit     || null;
+    this._jobs        = [];
+    this._active      = new Map();
+    this._done        = [];
+    this._handlers    = [];
+    this._running     = false;
+    this._paused      = false;
+    this._idCounter   = 0;
+    this._maxHistory  = opts.maxHistory    || 100;
+    this._rateLimitTokens = this._rateLimit?.max || Infinity;
+    this._rateLimitReset  = Date.now() + (this._rateLimit?.windowMs || 0);
+    this._metrics     = { completed: 0, failed: 0, totalDuration: 0 };
   }
 
-  process(nameOrHandler, handler) {
-    if (typeof nameOrHandler === 'function') {
-      this._workers['*'] = nameOrHandler;
-    } else {
-      this._workers[nameOrHandler] = handler;
-    }
-    return this;
-  }
-
-  add(name, data, options) {
-    const job = new Job(name, data, options);
-    if (job.delay > 0) {
-      setTimeout(() => this._enqueue(job), job.delay);
-    } else {
-      this._enqueue(job);
-    }
+  add(data, opts) {
+    opts = opts || {};
+    const id  = String(++this._idCounter);
+    const job = new Job(id, data, opts);
+    if (job.delay) { job.status = JOB_STATUS.DELAYED; }
+    this._jobs.push(job);
+    this._sortQueue();
+    this.emit('added', job);
+    if (!this._paused) this._tick();
     return job;
   }
 
-  _enqueue(job) {
-    // Insert by priority (higher priority first)
-    let idx = this._jobs.findIndex(j => j.priority < job.priority);
-    if (idx === -1) idx = this._jobs.length;
-    this._jobs.splice(idx, 0, job);
-    this.emit('added', job);
-    this._tick();
+  addBulk(items, opts) {
+    return items.map(item => this.add(item, opts));
+  }
+
+  addDelayed(data, delay, opts) {
+    return this.add(data, Object.assign({}, opts, { delay }));
+  }
+
+  process(handler) {
+    this._handlers.push(handler);
+    return this;
+  }
+
+  pause()  { this._paused = true;  this.emit('paused');  return this; }
+  resume() { this._paused = false; this.emit('resumed'); this._tick(); return this; }
+
+  async drain() {
+    return new Promise(resolve => {
+      const check = () => {
+        if (this._jobs.length === 0 && this._active.size === 0) {
+          this.off('completed', check);
+          this.off('failed', check);
+          resolve();
+        }
+      };
+      this.on('completed', check);
+      this.on('failed',    check);
+      check();
+    });
+  }
+
+  async close() {
+    this._paused = true;
+    await this.drain();
+    this.emit('closed');
   }
 
   _tick() {
-    if (this._paused) return;
-    while (this._running < this._concurrency && this._jobs.length > 0) {
-      const job = this._jobs.shift();
+    if (this._paused || this._running) return;
+    this._running = true;
+    while (this._active.size < this._concurrency && !this._paused) {
+      const job = this._nextReady();
+      if (!job) break;
       this._run(job);
     }
+    this._running = false;
+
+    const hasDelayed = this._jobs.some(j => j.status === JOB_STATUS.DELAYED);
+    if (hasDelayed) setTimeout(() => this._tick(), 100);
+  }
+
+  _nextReady() {
+    for (let i = 0; i < this._jobs.length; i++) {
+      const j = this._jobs[i];
+      if (j.status === JOB_STATUS.WAITING && j.isReady()) {
+        this._jobs.splice(i, 1);
+        return j;
+      }
+      if (j.status === JOB_STATUS.DELAYED && j.isReady()) {
+        j.status = JOB_STATUS.WAITING;
+        this._jobs.splice(i, 1);
+        return j;
+      }
+    }
+    return null;
   }
 
   async _run(job) {
-    const handler = this._workers[job.name] || this._workers['*'];
+    job.status    = JOB_STATUS.ACTIVE;
+    job.startedAt = Date.now();
+    job.attempts++;
+    this._active.set(job.id, job);
+    this.emit('active', job);
+
+    const handler = this._handlers[job.attempts - 1] || this._handlers[this._handlers.length - 1];
     if (!handler) {
-      job.status = 'failed';
-      job.error = `No handler for job "${job.name}"`;
-      if (job._reject) job._reject(new Error(job.error));
-      this.emit('failed', job, new Error(job.error));
+      job.status    = JOB_STATUS.FAILED;
+      job.error     = new Error('No handler registered');
+      job.finishedAt = Date.now();
+      this._finalize(job);
       return;
     }
 
-    this._running++;
-    this._active.set(job.id, job);
-    job.status = 'active';
-    job.startedAt = Date.now();
-    this.emit('active', job);
-
     let timer;
+    const timeoutPromise = job.timeout
+      ? new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Job timed out')), job.timeout); })
+      : null;
+
     try {
-      const ctx = {
-        job,
-        progress: (pct) => job._setProgress(pct),
-        log: (...args) => this.emit('log', job, ...args)
-      };
-
-      const resultPromise = handler(job.data, ctx);
-      const timeoutPromise = new Promise((_, reject) =>
-        timer = setTimeout(() => reject(new Error(`Job ${job.id} timed out after ${job.timeout}ms`)), job.timeout)
-      );
-
-      job.result = await Promise.race([resultPromise, timeoutPromise]);
-      clearTimeout(timer);
-      job.status = 'completed';
+      job._progressCb = (pct, data) => this.emit('progress', job, pct, data);
+      const workPromise = Promise.resolve(handler(job));
+      const result = timeoutPromise
+        ? await Promise.race([workPromise, timeoutPromise])
+        : await workPromise;
+      if (timer) clearTimeout(timer);
+      job.result    = result;
+      job.status    = JOB_STATUS.DONE;
       job.finishedAt = Date.now();
-      job.progress = 100;
-      this._stats.completed++;
-      if (job._resolve) job._resolve(job.result);
-      this.emit('completed', job, job.result);
-
+      this._metrics.completed++;
+      this._metrics.totalDuration += job.finishedAt - job.startedAt;
+      this.emit('completed', job, result);
     } catch (err) {
-      clearTimeout(timer);
-      if (job.retryCount < job.maxRetries) {
-        job.retryCount++;
-        job.status = 'waiting';
-        this._stats.retried++;
-        const delay = this._calcDelay(job);
-        this.emit('retry', job, err);
-        setTimeout(() => this._enqueue(job), delay);
-      } else {
-        job.status = 'failed';
-        job.finishedAt = Date.now();
-        job.error = err.message;
-        this._stats.failed++;
-        if (job._reject) job._reject(err);
-        this.emit('failed', job, err);
+      if (timer) clearTimeout(timer);
+      job.error = err;
+      if (job.canRetry()) {
+        job.status   = JOB_STATUS.WAITING;
+        job.startedAt = null;
+        this._active.delete(job.id);
+        this.emit('retrying', job, err);
+        const delay = this._retryDelay * job.attempts;
+        setTimeout(() => { this._jobs.unshift(job); this._tick(); }, delay);
+        return;
       }
-    } finally {
-      this._running--;
-      this._active.delete(job.id);
-      this._processed.push(job);
-      if (this._processed.length > this._maxProcessed) this._processed.shift();
-      this._tick();
-      if (this._running === 0 && this._jobs.length === 0) this.emit('drained');
+      job.status    = JOB_STATUS.FAILED;
+      job.finishedAt = Date.now();
+      this._metrics.failed++;
+      this.emit('failed', job, err);
     }
+
+    this._finalize(job);
   }
 
-  _calcDelay(job) {
-    if (job.backoff === 'fixed') return 1000;
-    if (job.backoff === 'linear') return job.retryCount * 1000;
-    return Math.min(Math.pow(2, job.retryCount) * 1000, 30000); // exponential, max 30s
+  _finalize(job) {
+    this._active.delete(job.id);
+    this._done.push(job);
+    if (this._done.length > this._maxHistory) this._done.shift();
+    this._tick();
   }
 
-  pause()   { this._paused = true; return this; }
-  resume()  { this._paused = false; this._tick(); return this; }
-  drain()   { return new Promise(resolve => { if (this._jobs.length === 0 && this._running === 0) return resolve(); this.once('drained', resolve); }); }
+  _sortQueue() {
+    this._jobs.sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt);
+  }
 
-  getJob(id) { return this._active.get(id) || this._processed.find(j => j.id === id) || null; }
-  size()     { return this._jobs.length; }
-  pending()  { return this._jobs.length; }
-  active()   { return this._running; }
-  stats()    { return Object.assign({}, this._stats, { pending: this.pending(), active: this.active() }); }
-  clear()    { this._jobs.length = 0; return this; }
+  get waiting()   { return this._jobs.filter(j => j.status === JOB_STATUS.WAITING).length; }
+  get active()    { return this._active.size; }
+  get completed() { return this._metrics.completed; }
+  get failed()    { return this._metrics.failed; }
+  get delayed()   { return this._jobs.filter(j => j.status === JOB_STATUS.DELAYED).length; }
 
-  setConcurrency(n) { this._concurrency = n; this._tick(); return this; }
+  metrics() {
+    return {
+      waiting:  this.waiting,
+      active:   this.active,
+      completed: this._metrics.completed,
+      failed:   this._metrics.failed,
+      delayed:  this.delayed,
+      avgDuration: this._metrics.completed
+        ? Math.round(this._metrics.totalDuration / this._metrics.completed) + 'ms'
+        : 'N/A',
+    };
+  }
+
+  getJob(id)       { return this._active.get(id) || this._jobs.find(j => j.id === id) || this._done.find(j => j.id === id) || null; }
+  getActiveJobs()  { return [...this._active.values()]; }
+  getWaitingJobs() { return this._jobs.filter(j => j.status === JOB_STATUS.WAITING); }
+  getFailedJobs()  { return this._done.filter(j => j.status === JOB_STATUS.FAILED); }
+  getDoneJobs()    { return this._done.filter(j => j.status === JOB_STATUS.DONE); }
 }
 
-class QueueManager {
-  constructor() { this._queues = new Map(); }
+function createQueue(name, opts) { return new Queue(name, opts); }
 
-  create(name, options) {
-    if (this._queues.has(name)) return this._queues.get(name);
-    const q = new Queue(name, options);
-    this._queues.set(name, q);
-    return q;
-  }
-
-  get(name) { return this._queues.get(name) || null; }
-  all()      { return [...this._queues.values()]; }
-
-  stats() {
-    const result = {};
-    for (const [name, q] of this._queues) result[name] = q.stats();
-    return result;
-  }
-}
-
-const manager = new QueueManager();
-
-module.exports = { Queue, Job, QueueManager, manager, create: (n,o) => manager.create(n,o), get: (n) => manager.get(n) };
+module.exports = { Queue, Job, JOB_STATUS, createQueue };

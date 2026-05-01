@@ -30,7 +30,7 @@ const NTL_ALIASES = Object.fromEntries(
   Object.keys(NTL_MODULES).flatMap(k => [
     ['ntl:' + k, k],
     ['ntl-lang/' + k, k],
-    ['@david0dev/ntl-lang/' + k, k],
+    ['@ntl-team/ntl-lang/' + k, k],
   ])
 );
 

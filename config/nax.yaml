@@ -1,0 +1,58 @@
+# Nax — NTL Module Manager Configuration
+# Nax is to NTL what Cargo is to Rust.
+# It lets you share and install NTL modules hosted on GitHub.
+
+cache:
+  dir: "~/.ntl/nax_cache"
+  max_age_days: 7
+
+registry:
+  default_branch: main
+  fallback_branch: master
+  raw_base: "https://raw.githubusercontent.com"
+  api_base: "https://api.github.com"
+
+module_json:
+  required_fields:
+    - name
+    - main
+  optional_fields:
+    - version
+    - description
+    - author
+    - license
+    - antiSteal
+
+naming:
+  pattern: "^[a-zA-Z0-9_-]+$"
+  max_length: 64
+  description: "Module names must contain only letters, numbers, hyphens, and underscores"
+
+url_format:
+  pattern: "github.com/user/repo"
+  with_tag: "github.com/user/repo@v1.0.0"
+  with_subdir: "github.com/user/repo/path/to/module"
+  description: |
+    Use nax URLs the same way you would use a Git dependency in Cargo.
+    The URL points to a folder in a GitHub repo that contains a module.json file.
+
+commands:
+  install:
+    description: "Download and cache a module from GitHub"
+    usage: "nax install github.com/user/repo"
+
+  list:
+    description: "Show all cached nax modules"
+    usage: "nax list"
+
+  clear:
+    description: "Remove the entire nax cache"
+    usage: "nax clear"
+
+  new:
+    description: "Create a new module.json for publishing a nax module"
+    usage: "nax new"
+
+  info:
+    description: "Show details about a cached module"
+    usage: "nax info <module-name>"

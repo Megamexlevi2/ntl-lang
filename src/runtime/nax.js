@@ -1,4 +1,8 @@
 'use strict';
+
+// Nax — NTL Module Manager
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
+
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
@@ -9,12 +13,12 @@ function ensureCache() {
   if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
 
-function getCachePath(name, version) {
-  return path.join(CACHE_DIR, `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}${version ? '_' + version : ''}`);
+function getCachePath(name) {
+  return path.join(CACHE_DIR, name.replace(/[^a-zA-Z0-9_-]/g, '_'));
 }
 
 function parseGithubUrl(url) {
-  const clean = url.replace(/^https?:\/\
+  const clean = url.replace(/^https?:\/\//, '').replace(/^github\.com\//, '');
   const [repoPath, tag] = clean.split('@');
   const parts = repoPath.split('/');
   if (parts.length < 2) throw new Error(`Invalid nax module URL: ${url}`);
@@ -30,13 +34,15 @@ async function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const mod = require('https');
     let data = '';
-    const req = mod.get(url, { headers: { 'User-Agent': 'ntl-lang/2.0' } }, res => {
+    const req = mod.get(url, { headers: { 'User-Agent': 'ntl-lang/3.5' } }, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         fetchJson(res.headers.location).then(resolve).catch(reject);
         return;
       }
       res.on('data', d => data += d);
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
+      });
     });
     req.on('error', reject);
   });
@@ -51,7 +57,7 @@ async function fetchText(url) {
   return new Promise((resolve, reject) => {
     const mod = require('https');
     let data = '';
-    const req = mod.get(url, { headers: { 'User-Agent': 'ntl-lang/2.0' } }, res => {
+    const req = mod.get(url, { headers: { 'User-Agent': 'ntl-lang/3.5' } }, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         fetchText(res.headers.location).then(resolve).catch(reject);
         return;
@@ -63,35 +69,35 @@ async function fetchText(url) {
   });
 }
 
-async function naxLoad(url) {
+async function naxInstall(url) {
   ensureCache();
+
   const { user, repo, subdir, tag } = parseGithubUrl(url);
   const cacheName = `${user}_${repo}${tag ? '_' + tag : ''}`;
-  const cacheDir = getCachePath(cacheName);
+  const cacheDir  = getCachePath(cacheName);
 
   if (fs.existsSync(path.join(cacheDir, 'module.json'))) {
     return loadFromCache(cacheDir);
   }
 
-  const branch = tag || 'main';
+  const branch  = tag || 'main';
   const rawBase = `https://raw.githubusercontent.com/${user}/${repo}/${branch}${subdir ? '/' + subdir : ''}`;
 
   let meta;
   try {
     meta = await fetchJson(`${rawBase}/module.json`);
-  } catch(e) {
-    const rawBaseMaster = `https://raw.githubusercontent.com/${user}/${repo}/master${subdir ? '/' + subdir : ''}`;
-    meta = await fetchJson(`${rawBaseMaster}/module.json`);
+  } catch (_) {
+    const masterBase = `https://raw.githubusercontent.com/${user}/${repo}/master${subdir ? '/' + subdir : ''}`;
+    meta = await fetchJson(`${masterBase}/module.json`);
   }
 
   validateModuleJson(meta);
 
   if (meta.antiSteal || meta.protected) {
-    throw new Error(`Module "${meta.name}" has anti-steal protection enabled. You cannot view or modify this module.`);
+    throw new Error(`Module "${meta.name}" has anti-steal protection — you cannot install it.`);
   }
 
-  const rawBase2 = `https://raw.githubusercontent.com/${user}/${repo}/${branch}${subdir ? '/' + subdir : ''}`;
-  const mainSource = await fetchText(`${rawBase2}/${meta.main}`);
+  const mainSource = await fetchText(`${rawBase}/${meta.main}`);
 
   fs.mkdirSync(cacheDir, { recursive: true });
   fs.writeFileSync(path.join(cacheDir, 'module.json'), JSON.stringify(meta, null, 2));
@@ -101,37 +107,41 @@ async function naxLoad(url) {
 }
 
 function loadFromCache(cacheDir) {
-  const metaPath = path.join(cacheDir, 'module.json');
+  const metaPath  = path.join(cacheDir, 'module.json');
   const indexPath = path.join(cacheDir, 'index.js');
-  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+  const meta      = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
 
   if (meta.antiSteal || meta.protected) {
-    throw new Error(`Module "${meta.name}" has anti-steal protection enabled.`);
+    throw new Error(`Module "${meta.name}" has anti-steal protection.`);
   }
 
-  if (meta.main && meta.main.endsWith('.ntl') && fs.existsSync(indexPath.replace('.js', '.ntl'))) {
-    const { Compiler } = require('../compiler');
-    const ntlSource = fs.readFileSync(indexPath.replace('.js', '.ntl'), 'utf-8');
-    const result = new Compiler().compileSource(ntlSource, meta.main);
-    if (!result.success) throw new Error(`Failed to compile nax module ${meta.name}: ${result.errors[0]?.message}`);
-    fs.writeFileSync(indexPath, result.code);
+  if (meta.main && meta.main.endsWith('.ntl')) {
+    const ntlPath = indexPath.replace('.js', '.ntl');
+    if (fs.existsSync(ntlPath)) {
+      const { Compiler } = require('../compiler');
+      const ntlSource = fs.readFileSync(ntlPath, 'utf-8');
+      const result    = new Compiler().compileSource(ntlSource, meta.main);
+      if (!result.success) {
+        throw new Error(`Failed to compile nax module ${meta.name}: ${result.errors[0]?.message}`);
+      }
+      fs.writeFileSync(indexPath, result.code);
+    }
   }
 
   try {
     delete require.cache[indexPath];
     return require(indexPath);
-  } catch(e) {
+  } catch (e) {
     throw new Error(`Failed to load nax module "${meta.name}": ${e.message}`);
   }
 }
 
 function validateModuleJson(meta) {
-  const required = ['name', 'main'];
-  for (const key of required) {
-    if (!meta[key]) throw new Error(`module.json is missing required field: "${key}"`);
+  for (const field of ['name', 'main']) {
+    if (!meta[field]) throw new Error(`module.json is missing required field: "${field}"`);
   }
   if (!/^[a-zA-Z0-9_-]+$/.test(meta.name)) {
-    throw new Error(`module.json "name" must only contain letters, numbers, - and _`);
+    throw new Error(`module.json "name" must contain only letters, numbers, - and _`);
   }
 }
 
@@ -139,30 +149,40 @@ function naxClear() {
   if (fs.existsSync(CACHE_DIR)) {
     fs.rmSync(CACHE_DIR, { recursive: true, force: true });
     fs.mkdirSync(CACHE_DIR, { recursive: true });
-    console.log('nax cache cleared.');
   }
 }
 
 function naxList() {
+  if (!fs.existsSync(CACHE_DIR)) return [];
   const result = [];
-  if (!fs.existsSync(CACHE_DIR)) return result;
-  const entries = fs.readdirSync(CACHE_DIR);
-  for (const e of entries) {
-    const metaPath = path.join(CACHE_DIR, e, 'module.json');
+  for (const entry of fs.readdirSync(CACHE_DIR)) {
+    const metaPath = path.join(CACHE_DIR, entry, 'module.json');
     if (fs.existsSync(metaPath)) {
       try {
         const m = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-        result.push({ name: m.name, version: m.version || 'latest', description: m.description || '', author: m.author || '' });
-      } catch {}
+        result.push({
+          name:        m.name,
+          version:     m.version || 'latest',
+          description: m.description || '',
+          author:      m.author || '',
+        });
+      } catch (_) {}
     }
   }
   return result;
 }
 
 function createModuleJson({ name, description, main, license, author, antiSteal }) {
-  const meta = { name: name || 'my-nax-module', version: '1.0.0', description: description || '', main: main || 'index.ntl', license: license || 'MIT', author: author || '' };
+  const meta = {
+    name:        name        || 'my-module',
+    version:     '1.0.0',
+    description: description || '',
+    main:        main        || 'index.ntl',
+    license:     license     || 'MIT',
+    author:      author      || '',
+  };
   if (antiSteal) meta.antiSteal = true;
   return JSON.stringify(meta, null, 2);
 }
 
-module.exports = { naxLoad, naxClear, naxList, createModuleJson, CACHE_DIR };
+module.exports = { naxInstall, naxLoad: naxInstall, naxClear, naxList, createModuleJson, CACHE_DIR };

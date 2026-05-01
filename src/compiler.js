@@ -1,16 +1,21 @@
 'use strict';
+
+// NTL Compiler
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
+
 const fs   = require('fs');
 const path = require('path');
-const { tokenize }      = require('./pipeline/lexer');
-const { parse }         = require('./pipeline/parser');
-const { CodeGen }       = require('./pipeline/codegen');
-const { ScopeAnalyzer } = require('./pipeline/scope');
-const { TypeInferer }   = require('./pipeline/typeinfer');
-const { TreeShaker }    = require('./pipeline/treeshaker');
-const { format: fmtErr } = require('./error');
+const { tokenize }        = require('./pipeline/lexer');
+const { parse }           = require('./pipeline/parser');
+const { CodeGen }         = require('./pipeline/codegen');
+const { ScopeAnalyzer }   = require('./pipeline/scope');
+const { TypeInferer }     = require('./pipeline/typeinfer');
+const { TreeShaker }      = require('./pipeline/treeshaker');
+const { format: fmtErr }  = require('./error');
 const { transformJSX, hasJSX } = require('./transforms/jsx');
 
-const NTL_VERSION = '3.5.0';
+const NTL_VERSION = '4.0.0';
+
 const TARGETS = {
   node:    { cjs: true,  esm: false },
   browser: { cjs: false, esm: true  },
@@ -20,25 +25,37 @@ const TARGETS = {
   cjs:     { cjs: true,  esm: false },
 };
 
+const DEFAULT_OPTS = {
+  target:        'node',
+  minify:        false,
+  strict:        false,
+  typeCheck:     false,
+  treeShake:     true,
+  obfuscate:     false,
+  credits:       false,
+  sourceMap:     false,
+  incremental:   false,
+  jsx:           false,
+  jsxPragma:     'React.createElement',
+  jsxPragmaFrag: 'React.Fragment',
+  jsxAutoImport: true,
+  comments:      false,
+  jitAnnotations: false,
+  embed:         true,
+};
+
 class Compiler {
   constructor(opts) {
-    this.opts = Object.assign({
-      target: 'node', minify: false, strict: false, typeCheck: false,
-      treeShake: true, obfuscate: false, credits: false, sourceMap: false,
-      incremental: false, jsx: false, jsxPragma: 'React.createElement',
-      jsxPragmaFrag: 'React.Fragment', jsxAutoImport: true,
-      comments: false, jitAnnotations: false, embed: true,
-    }, opts || {});
+    this.opts        = Object.assign({}, DEFAULT_OPTS, opts || {});
     this.typeChecker = new TypeInferer();
     this.treeshaker  = new TreeShaker();
     this._cache      = new Map();
-    this._embedCache = new Map();
   }
 
   compileSource(source, filename, opts) {
-    opts = Object.assign({}, this.opts, opts || {});
-    const start = Date.now();
+    opts     = Object.assign({}, this.opts, opts || {});
     filename = filename || '<unknown>';
+    const start = Date.now();
     const lines = source.split('\n');
 
     const autoJSX = opts.jsx || (opts.jsxAuto !== false && hasJSX(source));
@@ -64,15 +81,20 @@ class Compiler {
 
     const scopeErrors = new ScopeAnalyzer(filename, lines).analyze(ast);
     if (scopeErrors.length) {
-      return this._fail(scopeErrors.map(e => Object.assign({}, e, { file: filename, sourceLines: lines })), start);
+      return this._fail(
+        scopeErrors.map(e => Object.assign({}, e, { file: filename, sourceLines: lines })),
+        start
+      );
     }
 
     if (opts.strict || opts.typeCheck) {
-      const res = this.typeChecker.check(ast, { strict: opts.strict });
-      const typeErrors   = res.errors   || [];
-      const typeWarnings = res.warnings || [];
+      const res        = this.typeChecker.check(ast, { strict: opts.strict });
+      const typeErrors = res.errors || [];
       if (typeErrors.length) {
-        return this._fail(typeErrors.map(e => Object.assign({}, e, { file: filename, sourceLines: lines, phase: 'type' })), start);
+        return this._fail(
+          typeErrors.map(e => Object.assign({}, e, { file: filename, sourceLines: lines, phase: 'type' })),
+          start
+        );
       }
     }
 
@@ -80,13 +102,17 @@ class Compiler {
     try { code = new CodeGen({ target: opts.target, comments: opts.comments }).gen(ast); }
     catch (e) { return this._fail([this._wrapErr(e, lines, filename)], start); }
 
-    const runtime = this.treeshaker.generateRuntime(this.treeshaker.analyze(ast));
-    let output = (runtime ? runtime + '\n\n' : '') + code;
+    const usedFeatures = this.treeshaker.analyze(ast);
+    const runtime      = this.treeshaker.generateRuntime(usedFeatures);
+    let output         = (runtime ? runtime + '\n\n' : '') + code;
 
     if (opts.embed !== false && filename !== '<unknown>') {
       const embedResult = this._embedLocalDeps(output, filename, opts);
       if (!embedResult.success) {
-        return this._fail(embedResult.errors.map(e => Object.assign({}, e, { file: filename, sourceLines: lines })), start);
+        return this._fail(
+          embedResult.errors.map(e => Object.assign({}, e, { file: filename, sourceLines: lines })),
+          start
+        );
       }
       output = embedResult.code;
     }
@@ -97,11 +123,14 @@ class Compiler {
     if (opts.minify) output = this._minify(output);
 
     return {
-      success: true, code: output, ast,
-      errors: [], warnings: [],
-      time: Date.now() - start,
-      target: opts.target,
-      stats: { lines: lines.length, chars: source.length, outputChars: output.length },
+      success: true,
+      code:    output,
+      ast,
+      errors:  [],
+      warnings: [],
+      time:    Date.now() - start,
+      target:  opts.target,
+      stats:   { lines: lines.length, chars: source.length, outputChars: output.length },
     };
   }
 
@@ -118,19 +147,21 @@ class Compiler {
     }
     const source = fs.readFileSync(filePath, 'utf-8');
     const result = this.compileSource(source, filePath, opts);
-    if (opts && opts.incremental) this._cache.set(filePath, { mtime: Date.now(), result });
+    if (opts && opts.incremental) {
+      this._cache.set(filePath, { mtime: Date.now(), result });
+    }
     return result;
   }
 
   compileProject(config) {
     const inputDir  = path.resolve(config.src  || config.input  || './src');
     const outputDir = path.resolve(config.dist || config.output || './dist');
-    const opts = Object.assign({}, this.opts, config.compilerOptions || {});
+    const opts      = Object.assign({}, this.opts, config.compilerOptions || {});
 
-    if (!fs.existsSync(inputDir)) throw new Error('Input directory not found: ' + inputDir);
+    if (!fs.existsSync(inputDir)) throw new Error('Source directory not found: ' + inputDir);
     if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
-    const files = this._findNTL(inputDir);
+    const files   = this._findNTL(inputDir);
     const results = { succeeded: 0, failed: 0, files: [], errors: [] };
 
     for (const file of files) {
@@ -144,9 +175,15 @@ class Compiler {
       } else {
         fs.writeFileSync(outPath, result.code, 'utf-8');
         results.succeeded++;
-        results.files.push({ input: rel, output: path.relative('.', outPath), time: result.time, chars: result.stats.outputChars });
+        results.files.push({
+          input:  rel,
+          output: path.relative('.', outPath),
+          time:   result.time,
+          chars:  result.stats.outputChars,
+        });
       }
     }
+
     return results;
   }
 
@@ -156,10 +193,10 @@ class Compiler {
   }
 
   _embedPass(code, fromAbs, visited, opts) {
-    const dir = path.dirname(fromAbs);
-    const depRe = /require\(\s*(['"])((?:\.\.?\/)[^'"]+\.ntl)\1\s*\)/g;
+    const dir    = path.dirname(fromAbs);
+    const depRe  = /require\(\s*(['"])((?:\.\.?\/)[^'"]+\.ntl)\1\s*\)/g;
     const errors = [];
-    let changed = true;
+    let changed  = true;
 
     while (changed) {
       changed = false;
@@ -168,7 +205,7 @@ class Compiler {
         const cacheKey = absPath;
 
         if (visited.has(cacheKey)) {
-          return `(/* embedded: ${depPath} */ _ntl_mod_${_safeId(absPath)})`;
+          return `(/* embedded: ${depPath} */ _ntl_mod_${safeId(absPath)})`;
         }
 
         if (!fs.existsSync(absPath)) {
@@ -192,10 +229,10 @@ class Compiler {
           return match;
         }
 
-        const safeId = _safeId(absPath);
+        const id      = safeId(absPath);
         const wrapped = [
           `(function() {`,
-          `  const _ntl_mod_${safeId} = (function() {`,
+          `  const _ntl_mod_${id} = (function() {`,
           `    const module = { exports: {} };`,
           `    const exports = module.exports;`,
           `    const __filename = ${JSON.stringify(absPath)};`,
@@ -203,7 +240,7 @@ class Compiler {
           depResult.code.split('\n').map(l => '    ' + l).join('\n'),
           `    return module.exports;`,
           `  })();`,
-          `  return _ntl_mod_${safeId};`,
+          `  return _ntl_mod_${id};`,
           `})()`,
         ].join('\n');
 
@@ -217,10 +254,12 @@ class Compiler {
 
   _compileSourceForEmbed(source, filename, opts, visited) {
     const innerOpts = Object.assign({}, opts, { embed: false });
-    const result = this.compileSource(source, filename, innerOpts);
+    const result    = this.compileSource(source, filename, innerOpts);
     if (!result.success) return result;
     const embedResult = this._embedPass(result.code, path.resolve(filename), visited, opts);
-    if (!embedResult.success) return { success: false, code: null, ast: null, errors: embedResult.errors, warnings: [] };
+    if (!embedResult.success) {
+      return { success: false, code: null, ast: null, errors: embedResult.errors, warnings: [] };
+    }
     return Object.assign({}, result, { code: embedResult.code });
   }
 
@@ -246,15 +285,19 @@ class Compiler {
   }
 
   _minify(code) {
-    return code.split('\n').map(l => l.trim()).filter(l => l).join('\n').replace(/\n{2,}/g, '\n');
+    return code.split('\n').map(l => l.trim()).filter(Boolean).join('\n').replace(/\n{2,}/g, '\n');
   }
 
   _wrapErr(e, lines, filename) {
     return {
-      message: e.message, suggestion: e.suggestion || null,
-      code: e.code || null, phase: e.phase || 'compile',
-      line: e.line || 0, col: e.col || 0,
-      file: e.file || filename, sourceLines: lines,
+      message:     e.message,
+      suggestion:  e.suggestion || null,
+      code:        e.code       || null,
+      phase:       e.phase      || 'compile',
+      line:        e.line       || 0,
+      col:         e.col        || 0,
+      file:        e.file       || filename,
+      sourceLines: lines,
     };
   }
 
@@ -263,7 +306,7 @@ class Compiler {
   }
 }
 
-function _safeId(absPath) {
+function safeId(absPath) {
   return absPath.replace(/[^a-zA-Z0-9]/g, '_').replace(/^_+/, '');
 }
 

@@ -1,197 +1,211 @@
 'use strict';
-// ntl:env — Production environment & config management
+
+// ntl:env — .env file loading, validation, and type-safe config
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
+
 const fs   = require('fs');
 const path = require('path');
 
-function loadDotEnv(filePath) {
-  const envPath = filePath || path.join(process.cwd(), '.env');
-  if (!fs.existsSync(envPath)) return {};
-  const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+function parseDotEnv(text) {
   const result = {};
-  for (const raw of lines) {
-    const line = raw.trim();
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
-    if (eq < 0) continue;
-    let key = line.slice(0, eq).trim();
-    let val = line.slice(eq + 1).trim();
-    // Strip inline comments
-    const commentIdx = val.search(/\s+#/);
-    if (commentIdx !== -1) val = val.slice(0, commentIdx).trim();
-    // Strip quotes
-    if ((val.startsWith('"') && val.endsWith('"')) ||
-        (val.startsWith("'") && val.endsWith("'"))) {
+    const eqIdx = line.indexOf('=');
+    if (eqIdx === -1) continue;
+    let key = line.slice(0, eqIdx).trim();
+    let val = line.slice(eqIdx + 1).trim();
+    if (val.startsWith('"') && val.endsWith('"')) {
+      val = val.slice(1, -1).replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/, '"').replace(/\\\\/, '\\');
+    } else if (val.startsWith("'") && val.endsWith("'")) {
       val = val.slice(1, -1);
+    } else {
+      const commentIdx = val.indexOf(' #');
+      if (commentIdx !== -1) val = val.slice(0, commentIdx).trim();
     }
     result[key] = val;
   }
   return result;
 }
 
-class Env {
-  constructor(options) {
-    options = options || {};
-    this._data = {};
-    this._schema = {};
-    this._errors = [];
-    // Load .env files
-    const files = options.files || ['.env'];
-    if (options.override !== false) {
-      for (const file of files) {
-        const loaded = loadDotEnv(path.resolve(process.cwd(), file));
-        Object.assign(this._data, loaded);
-      }
-      // process.env always overrides
-      Object.assign(this._data, process.env);
-    } else {
-      Object.assign(this._data, process.env);
-      for (const file of [...files].reverse()) {
-        const loaded = loadDotEnv(path.resolve(process.cwd(), file));
-        for (const [k, v] of Object.entries(loaded)) {
-          if (!(k in this._data)) this._data[k] = v;
-        }
-      }
+function load(options) {
+  options = options || {};
+  const filePath  = options.path     || options.filePath || '.env';
+  const override  = options.override !== false;
+  const debug     = options.debug    || false;
+  const encoding  = options.encoding || 'utf-8';
+
+  const abs = path.resolve(filePath);
+  if (!fs.existsSync(abs)) {
+    if (options.required) throw new Error(`Missing required .env file: ${abs}`);
+    return {};
+  }
+
+  const text = fs.readFileSync(abs, encoding);
+  const vars  = parseDotEnv(text);
+  let loaded  = 0;
+
+  for (const [k, v] of Object.entries(vars)) {
+    if (override || process.env[k] === undefined) {
+      process.env[k] = v;
+      loaded++;
     }
+    if (debug) process.stdout.write(`[ntl:env] ${k}=${override || !process.env[k] ? v : '(skipped, already set)'}\n`);
   }
 
-  get(key, defaultVal) {
-    const val = this._data[key];
-    if (val === undefined || val === null || val === '') return defaultVal !== undefined ? defaultVal : null;
-    return val;
-  }
-
-  str(key, defaultVal) {
-    const v = this.get(key, defaultVal);
-    return v !== null ? String(v) : null;
-  }
-
-  int(key, defaultVal) {
-    const v = this.get(key, defaultVal !== undefined ? String(defaultVal) : undefined);
-    if (v === null) return null;
-    const n = parseInt(v, 10);
-    if (isNaN(n)) throw new Error(`[ntl:env] ${key} must be an integer, got "${v}"`);
-    return n;
-  }
-
-  float(key, defaultVal) {
-    const v = this.get(key, defaultVal !== undefined ? String(defaultVal) : undefined);
-    if (v === null) return null;
-    const n = parseFloat(v);
-    if (isNaN(n)) throw new Error(`[ntl:env] ${key} must be a number, got "${v}"`);
-    return n;
-  }
-
-  bool(key, defaultVal) {
-    const v = this.get(key, defaultVal !== undefined ? String(defaultVal) : undefined);
-    if (v === null) return null;
-    const s = String(v).toLowerCase().trim();
-    if (['true', '1', 'yes', 'on'].includes(s)) return true;
-    if (['false', '0', 'no', 'off', ''].includes(s)) return false;
-    throw new Error(`[ntl:env] ${key} must be a boolean, got "${v}"`);
-  }
-
-  list(key, separator, defaultVal) {
-    const v = this.get(key, defaultVal !== undefined ? String(defaultVal) : undefined);
-    if (v === null) return [];
-    return v.split(separator || ',').map(s => s.trim()).filter(Boolean);
-  }
-
-  json(key, defaultVal) {
-    const v = this.get(key);
-    if (v === null) return defaultVal !== undefined ? defaultVal : null;
-    try { return JSON.parse(v); } catch { throw new Error(`[ntl:env] ${key} is not valid JSON`); }
-  }
-
-  url(key, defaultVal) {
-    const v = this.str(key, defaultVal);
-    if (!v) return null;
-    try { return new URL(v).toString(); } catch { throw new Error(`[ntl:env] ${key} is not a valid URL: "${v}"`); }
-  }
-
-  require(key) {
-    const v = this.get(key);
-    if (v === null || v === undefined || v === '') {
-      throw new Error(`[ntl:env] Required environment variable "${key}" is not set`);
-    }
-    return v;
-  }
-
-  has(key) {
-    const v = this._data[key];
-    return v !== undefined && v !== null && v !== '';
-  }
-
-  set(key, value) {
-    this._data[key] = String(value);
-    process.env[key] = String(value);
-    return this;
-  }
-
-  all() { return Object.assign({}, this._data); }
-
-  schema(spec) {
-    this._schema = spec;
-    return this;
-  }
-
-  validate() {
-    this._errors = [];
-    for (const [key, rules] of Object.entries(this._schema)) {
-      const r = typeof rules === 'string' ? { type: rules } : rules;
-      const raw = this._data[key];
-      if (r.required && (raw === undefined || raw === null || raw === '')) {
-        this._errors.push(`"${key}" is required`); continue;
-      }
-      if (raw === undefined || raw === null || raw === '') continue;
-      if (r.type === 'number' && isNaN(Number(raw)))
-        this._errors.push(`"${key}" must be a number`);
-      if (r.type === 'boolean' && !['true','false','1','0','yes','no'].includes(raw.toLowerCase()))
-        this._errors.push(`"${key}" must be a boolean`);
-      if (r.oneOf && !r.oneOf.includes(raw))
-        this._errors.push(`"${key}" must be one of: ${r.oneOf.join(', ')}`);
-      if (r.pattern && !new RegExp(r.pattern).test(raw))
-        this._errors.push(`"${key}" does not match pattern ${r.pattern}`);
-    }
-    if (this._errors.length) {
-      throw new Error('[ntl:env] Validation failed:\n  - ' + this._errors.join('\n  - '));
-    }
-    return this;
-  }
-
-  // Shortcut for common patterns
-  get port()     { return this.int('PORT', 3000); }
-  get nodeEnv()  { return this.str('NODE_ENV', 'development'); }
-  get isDev()    { return this.nodeEnv === 'development'; }
-  get isProd()   { return this.nodeEnv === 'production'; }
-  get isTest()   { return this.nodeEnv === 'test'; }
-  get dbUrl()    { return this.str('DATABASE_URL'); }
-  get redisUrl() { return this.str('REDIS_URL'); }
-  get jwtSecret(){ return this.str('JWT_SECRET'); }
-  get debug()    { return this.bool('DEBUG', 'false'); }
+  return vars;
 }
 
-const _default = new Env();
+function loadFiles(files, options) {
+  const merged = {};
+  for (const f of files) {
+    Object.assign(merged, load(Object.assign({}, options, { path: f, required: false })));
+  }
+  return merged;
+}
 
-function load(options) { return new Env(options); }
-function get(key, def)  { return _default.get(key, def); }
-function str(key, def)  { return _default.str(key, def); }
-function int(key, def)  { return _default.int(key, def); }
-function bool(key, def) { return _default.bool(key, def); }
-function list(key, sep, def) { return _default.list(key, sep, def); }
-function require_(key)  { return _default.require(key); }
-function has(key)       { return _default.has(key); }
-function set(key, val)  { return _default.set(key, val); }
+function get(key, defaultValue) {
+  const val = process.env[key];
+  if (val === undefined || val === '') return defaultValue;
+  return val;
+}
+
+function getNumber(key, defaultValue) {
+  const val = process.env[key];
+  if (val === undefined || val === '') return defaultValue;
+  const n = Number(val);
+  return isNaN(n) ? defaultValue : n;
+}
+
+function getBoolean(key, defaultValue) {
+  const val = process.env[key];
+  if (val === undefined || val === '') return defaultValue;
+  return val === 'true' || val === '1' || val === 'yes' || val === 'on';
+}
+
+function getArray(key, sep, defaultValue) {
+  const val = process.env[key];
+  if (val === undefined || val === '') return defaultValue || [];
+  return val.split(sep || ',').map(s => s.trim()).filter(Boolean);
+}
+
+function require_(key, message) {
+  const val = process.env[key];
+  if (val === undefined || val === '') {
+    throw new Error(message || `Missing required environment variable: ${key}`);
+  }
+  return val;
+}
+
+function requireAll(keys) {
+  const missing = keys.filter(k => !process.env[k]);
+  if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  return Object.fromEntries(keys.map(k => [k, process.env[k]]));
+}
+
+function set(key, value) {
+  process.env[key] = String(value);
+  return value;
+}
+
+function unset(key) { delete process.env[key]; }
+
+function has(key)   { return process.env[key] !== undefined; }
+
+function all() { return Object.assign({}, process.env); }
+
+// ─── Schema-based config ─────────────────────────────────────────────────────
+
+class EnvField {
+  constructor(type) {
+    this._type     = type;
+    this._optional = false;
+    this._default  = undefined;
+    this._choices  = null;
+    this._min      = null;
+    this._max      = null;
+  }
+
+  optional()        { this._optional = true; return this; }
+  default(val)      { this._default  = val;  return this; }
+  oneOf(values)     { this._choices  = values; return this; }
+  min(n)            { this._min = n; return this; }
+  max(n)            { this._max = n; return this; }
+
+  _coerce(raw) {
+    if (raw === undefined || raw === '') return this._default;
+    if (this._type === 'number')  { const n = Number(raw); return isNaN(n) ? this._default : n; }
+    if (this._type === 'boolean') return raw === 'true' || raw === '1' || raw === 'yes';
+    if (this._type === 'array')   return raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (this._type === 'json')    { try { return JSON.parse(raw); } catch(_) { return this._default; } }
+    return raw;
+  }
+
+  _validate(key, value) {
+    if (value === undefined || value === null) {
+      if (this._optional) return { ok: true, value: this._default !== undefined ? this._default : null };
+      return { ok: false, error: `Missing required env var: ${key}` };
+    }
+    if (this._choices && !this._choices.includes(value)) {
+      return { ok: false, error: `${key} must be one of: ${this._choices.join(', ')}, got: ${value}` };
+    }
+    if (this._type === 'number') {
+      if (this._min !== null && value < this._min) return { ok: false, error: `${key} must be >= ${this._min}` };
+      if (this._max !== null && value > this._max) return { ok: false, error: `${key} must be <= ${this._max}` };
+    }
+    return { ok: true, value };
+  }
+}
+
+function schema(shape) {
+  return {
+    parse: (env) => {
+      env = env || process.env;
+      const result = {}, errors = [];
+      for (const [key, field] of Object.entries(shape)) {
+        const raw   = env[key];
+        const value = field._coerce(raw);
+        const r     = field._validate(key, value);
+        if (!r.ok) errors.push(r.error);
+        else result[key] = r.value;
+      }
+      if (errors.length) throw new Error(`Invalid configuration:\n  - ${errors.join('\n  - ')}`);
+      return result;
+    },
+    safeParse: (env) => {
+      try { return { ok: true, data: this.parse(env) }; }
+      catch(e) { return { ok: false, error: e.message }; }
+    },
+  };
+}
+
+const field = {
+  string:  () => new EnvField('string'),
+  number:  () => new EnvField('number'),
+  boolean: () => new EnvField('boolean'),
+  array:   () => new EnvField('array'),
+  json:    () => new EnvField('json'),
+  url:     () => {
+    const f = new EnvField('string');
+    const orig = f._validate.bind(f);
+    f._validate = (key, value) => {
+      const r = orig(key, value);
+      if (!r.ok) return r;
+      if (value) { try { new URL(value); } catch(_) { return { ok: false, error: `${key} must be a valid URL` }; } }
+      return r;
+    };
+    return f;
+  },
+};
+
+function is() { return get('NODE_ENV', 'development'); }
+function isDev()  { return is() === 'development'; }
+function isProd() { return is() === 'production'; }
+function isTest() { return is() === 'test'; }
 
 module.exports = {
-  Env, load,
-  get, str, int, bool, list, json: (k,d) => _default.json(k,d),
-  url: (k,d) => _default.url(k,d),
-  require: require_, has, set,
-  all: () => _default.all(),
-  get port()    { return _default.port; },
-  get nodeEnv() { return _default.nodeEnv; },
-  get isDev()   { return _default.isDev; },
-  get isProd()  { return _default.isProd; },
-  get isTest()  { return _default.isTest; },
-  loadDotEnv
+  load, loadFiles, get, getNumber, getBoolean, getArray,
+  require: require_, requireAll, set, unset, has, all,
+  schema, field, is, isDev, isProd, isTest,
+  parse: parseDotEnv,
 };

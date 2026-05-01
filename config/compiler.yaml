@@ -1,0 +1,42 @@
+# NTL Compiler Configuration
+# These are the default compiler settings used when no project config is present.
+# You can override all of these in your ntl.yaml project file.
+
+version: "4.0.0"
+
+defaults:
+  target: node
+  strict: false
+  minify: false
+  treeShake: true
+  obfuscate: false
+  sourceMap: false
+  incremental: false
+  comments: false
+  typeCheck: false
+  embed: true
+  jsx: false
+  jsxPragma: "React.createElement"
+  jsxPragmaFrag: "React.Fragment"
+  jsxAutoImport: true
+
+output:
+  defaultDir: dist
+  extension: .js
+  encoding: utf-8
+
+project:
+  configFile: ntl.yaml
+  srcDir: src
+  distDir: dist
+  testDir: tests
+  include: "**/*.ntl"
+  exclude:
+    - node_modules
+    - dist
+    - .git
+
+cache:
+  enabled: true
+  dir: ".ntl-cache"
+  stdlibDir: ".ntl-cache/stdlib"

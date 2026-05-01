@@ -1,0 +1,116 @@
+# NTL Standard Library Module Registry
+# Maps module names to their source locations.
+# The loader reads this file to find the right .ntl source for each ntl:* import.
+
+modules:
+  http:
+    path: net/http.ntl
+    description: "HTTP server, router, middleware, fetch, CORS, static file serving"
+    category: net
+    requires: "node >= 18"
+
+  db:
+    path: data/db.ntl
+    description: "SQLite — query builder, migrations, simple ORM"
+    category: data
+    requires: "node >= 22"
+
+  crypto:
+    path: core/crypto.ntl
+    description: "Hashing (SHA-256, bcrypt), AES encryption, JWT, UUID generation"
+    category: core
+
+  validate:
+    path: data/validate.ntl
+    description: "Schema-based validation, similar to Zod — works on objects, strings, numbers"
+    category: data
+
+  ws:
+    path: net/ws.ntl
+    description: "WebSocket server and client — no native dependencies"
+    category: net
+
+  events:
+    path: core/events.ntl
+    description: "Event emitter and pub/sub messaging"
+    category: core
+
+  logger:
+    path: tools/logger.ntl
+    description: "Structured logging with levels (debug, info, warn, error), file output, child loggers"
+    category: tools
+
+  cache:
+    path: data/cache.ntl
+    description: "LRU in-memory cache with TTL support"
+    category: data
+
+  queue:
+    path: core/queue.ntl
+    description: "Job queue with retries, delays, and concurrency limits"
+    category: core
+
+  mail:
+    path: net/mail.ntl
+    description: "Send email via SMTP — works with Gmail, SendGrid, Mailgun, etc."
+    category: net
+
+  env:
+    path: tools/env.ntl
+    description: "Read .env files, validate required vars, type-safe config"
+    category: tools
+
+  test:
+    path: tools/test.ntl
+    description: "Built-in test runner — no extra packages needed"
+    category: tools
+
+  ai:
+    path: ai/ai.ntl
+    description: "Connect to OpenAI, Anthropic, and Ollama — streaming supported"
+    category: ai
+
+  fs:
+    path: core/fs.ntl
+    description: "File system helpers — read, write, watch, walk directories"
+    category: core
+
+  obf:
+    path: data/obf.ntl
+    description: "JavaScript output obfuscation for protecting compiled code"
+    category: data
+
+  android:
+    path: mobile/android.ntl
+    description: "Android/Termux runtime support"
+    category: mobile
+
+  utils:
+    path: core/utils.ntl
+    description: "General-purpose utilities — string, array, object helpers"
+    category: core
+
+  web:
+    path: data/web.ntl
+    description: "Project scaffolding helpers for web apps"
+    category: data
+
+self_hosted:
+  - cache
+  - events
+  - logger
+  - queue
+  - validate
+  - env
+  - utils
+  - crypto
+  - fs
+  - android
+  - test
+  - ai
+  - mail
+  - http
+  - ws
+  - db
+  - obf
+  - web

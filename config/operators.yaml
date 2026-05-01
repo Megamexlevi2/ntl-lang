@@ -1,0 +1,81 @@
+# NTL Operator Definitions
+# The lexer uses the multi_char list (in order) to match operators before single chars.
+# Longer operators must come before shorter ones to avoid partial matches.
+
+multi_char:
+  - "==="
+  - "!=="
+  - "<<="
+  - ">>="
+  - "**="
+  - "&&="
+  - "||="
+  - "??="
+  - "=="
+  - "!="
+  - "<="
+  - ">="
+  - "&&"
+  - "||"
+  - "??"
+  - "|>"
+  - "=>"
+  - "->"
+  - "++"
+  - "--"
+  - "+="
+  - "-="
+  - "*="
+  - "/="
+  - "%="
+  - "**"
+  - "<<"
+  - ">>"
+  - ">>>"
+  - "?."
+  - "..."
+  - "::"
+  - "@"
+  - ".."
+
+single_char:
+  - "+"
+  - "-"
+  - "*"
+  - "/"
+  - "%"
+  - "="
+  - "<"
+  - ">"
+  - "!"
+  - "&"
+  - "|"
+  - "^"
+  - "~"
+  - "?"
+  - ":"
+  - "@"
+  - "#"
+
+punctuation:
+  - "{"
+  - "}"
+  - "("
+  - ")"
+  - "["
+  - "]"
+  - ","
+  - "."
+  - ";"
+
+pipeline:
+  symbol: "|>"
+  description: "Passes the left value as the first argument to the right function"
+
+nullish:
+  symbol: "??"
+  description: "Returns the right value if the left is null or undefined"
+
+optional_chain:
+  symbol: "?."
+  description: "Access a property only if the object is not null or undefined"

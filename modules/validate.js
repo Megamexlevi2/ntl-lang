@@ -1,365 +1,422 @@
 'use strict';
-// ntl:validate — Production runtime validation & schema
+
+// ntl:validate — schema-based validation, similar to Zod
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
 
 class ValidationError extends Error {
-  constructor(errors, message) {
-    super(message || errors.map(e => e.path ? `${e.path}: ${e.message}` : e.message).join('\n'));
-    this.name = 'ValidationError';
+  constructor(errors) {
+    super(errors.map(e => e.path ? `${e.path}: ${e.message}` : e.message).join('; '));
+    this.name   = 'ValidationError';
     this.errors = errors;
-    this.isValidationError = true;
   }
 }
 
 class Schema {
-  constructor(shape) {
-    this._shape = shape || {};
-    this._required = true;
-    this._nullable = false;
-    this._transform = null;
-    this._tests = [];
-    this._default = undefined;
-    this._label = null;
-    this._strip = false;
+  constructor(type) {
+    this._type        = type;
+    this._optional    = false;
+    this._nullable    = false;
+    this._default     = undefined;
+    this._checks      = [];
+    this._description = '';
   }
 
-  optional()     { this._required = false; return this; }
-  nullable()     { this._nullable = true; return this; }
-  default(val)   { this._default = val; this._required = false; return this; }
-  label(s)       { this._label = s; return this; }
-  strip()        { this._strip = true; return this; }
-  transform(fn)  { this._transform = fn; return this; }
+  optional()           { this._optional = true;  return this; }
+  nullable()           { this._nullable = true;  return this; }
+  required()           { this._optional = false; return this; }
+  default(val)         { this._default = val;    return this; }
+  describe(desc)       { this._description = desc; return this; }
 
-  test(name, message, fn) {
-    this._tests.push({ name, message, fn });
+  _check(fn, msg) { this._checks.push({ fn, msg }); return this; }
+
+  _runChecks(value, path) {
+    const errors = [];
+    for (const check of this._checks) {
+      const result = check.fn(value);
+      if (result !== true) {
+        errors.push({ path, message: typeof result === 'string' ? result : check.msg });
+      }
+    }
+    return errors;
+  }
+
+  validate(value, path) {
+    path = path || '';
+    if (value === undefined || value === null) {
+      if (value === undefined && this._default !== undefined) return { ok: true, value: this._default, errors: [] };
+      if (this._optional || this._nullable) return { ok: true, value: value ?? null, errors: [] };
+      return { ok: false, value: null, errors: [{ path, message: `Value is required` }] };
+    }
+    return this._validate(value, path);
+  }
+
+  _validate(value, path) { return { ok: true, value, errors: [] }; }
+
+  parse(value) {
+    const r = this.validate(value);
+    if (!r.ok) throw new ValidationError(r.errors);
+    return r.value;
+  }
+
+  safeParse(value) { return this.validate(value); }
+}
+
+// ─── String ───────────────────────────────────────────────────────────────────
+
+class StringSchema extends Schema {
+  constructor() { super('string'); }
+
+  min(n, msg)    { return this._check(v => v.length >= n || (msg || `Must be at least ${n} characters`)); }
+  max(n, msg)    { return this._check(v => v.length <= n || (msg || `Must be at most ${n} characters`)); }
+  length(n, msg) { return this._check(v => v.length === n || (msg || `Must be exactly ${n} characters`)); }
+  trim()         { return this._check(v => { return true; }); }  // applied in _validate
+  lowercase()    { return this._check(v => v === v.toLowerCase() || 'Must be lowercase'); }
+  uppercase()    { return this._check(v => v === v.toUpperCase() || 'Must be uppercase'); }
+  regex(re, msg) { return this._check(v => re.test(v) || (msg || `Must match pattern ${re}`)); }
+  nonempty(msg)  { return this._check(v => v.length > 0 || (msg || 'Must not be empty')); }
+
+  oneOf(values, msg) {
+    return this._check(v => values.includes(v) || (msg || `Must be one of: ${values.join(', ')}`));
+  }
+
+  email(msg) {
+    return this._check(v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || (msg || 'Must be a valid email address'));
+  }
+
+  url(msg) {
+    return this._check(v => {
+      try { new URL(v); return true; } catch(_) { return msg || 'Must be a valid URL'; }
+    });
+  }
+
+  uuid(msg) {
+    return this._check(v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) || (msg || 'Must be a valid UUID'));
+  }
+
+  startsWith(prefix, msg) { return this._check(v => v.startsWith(prefix) || (msg || `Must start with "${prefix}"`)); }
+  endsWith(suffix, msg)   { return this._check(v => v.endsWith(suffix)   || (msg || `Must end with "${suffix}"`)); }
+  includes(sub, msg)      { return this._check(v => v.includes(sub)      || (msg || `Must include "${sub}"`)); }
+
+  transform(fn) {
+    const orig = this._validate.bind(this);
+    this._validate = (value, path) => {
+      const r = orig(value, path);
+      if (r.ok) r.value = fn(r.value);
+      return r;
+    };
     return this;
   }
 
-  _runTests(value, path, errors) {
-    for (const t of this._tests) {
-      if (!t.fn(value)) {
-        errors.push({ path, message: t.message });
-      }
-    }
-  }
-
-  parse(value, path) {
-    path = path || '';
-    const errors = [];
-    // Handle default
-    if (value === undefined || value === null) {
-      if (this._default !== undefined) {
-        value = typeof this._default === 'function' ? this._default() : this._default;
-      } else if (!this._required) {
-        return { value: this._nullable ? value : undefined, errors: [] };
-      } else {
-        return { value, errors: [{ path, message: (this._label || path || 'value') + ' is required' }] };
-      }
-    }
-    if (value === null && this._nullable) return { value, errors: [] };
-    const result = this._parse(value, path, errors);
-    if (errors.length > 0) return { value: result, errors };
-    const final = this._transform ? this._transform(result) : result;
-    this._runTests(final, path, errors);
-    return { value: final, errors };
-  }
-
-  _parse(value, path, errors) { return value; }
-
-  validate(value) {
-    const { value: result, errors } = this.parse(value, '');
-    if (errors.length > 0) throw new ValidationError(errors);
-    return result;
-  }
-
-  check(value) {
-    const { errors } = this.parse(value, '');
-    return errors.length === 0;
-  }
-
-  safeParse(value) {
-    const { value: result, errors } = this.parse(value, '');
-    if (errors.length > 0) return { success: false, errors, error: new ValidationError(errors) };
-    return { success: true, data: result };
-  }
-}
-
-class StringSchema extends Schema {
-  constructor() {
-    super();
-    this._minLen = null; this._maxLen = null; this._pattern = null;
-    this._email = false; this._url = false; this._trim = false;
-    this._uppercase = false; this._lowercase = false;
-    this._oneOf = null; this._notOneOf = null;
-  }
-
-  min(n, msg)     { this._minLen = n; this._minMsg = msg; return this; }
-  max(n, msg)     { this._maxLen = n; this._maxMsg = msg; return this; }
-  length(n, msg)  { this._minLen = n; this._maxLen = n; this._lenMsg = msg; return this; }
-  pattern(re, msg){ this._pattern = re; this._patMsg = msg; return this; }
-  email(msg)      { this._email = true; this._emailMsg = msg; return this; }
-  url(msg)        { this._url = true; this._urlMsg = msg; return this; }
-  trim()          { this._trim = true; return this; }
-  uppercase()     { this._uppercase = true; return this; }
-  lowercase()     { this._lowercase = true; return this; }
-  oneOf(vals, msg){ this._oneOf = vals; this._oneOfMsg = msg; return this; }
-  notOneOf(vals, msg){ this._notOneOf = vals; this._notOneOfMsg = msg; return this; }
-  notEmpty(msg)   { return this.min(1, msg || 'must not be empty'); }
-  minLength(n, msg) { return this.min(n, msg); }
-  maxLength(n, msg) { return this.max(n, msg); }
-  matches(re, msg)  { return this.pattern(re, msg); }
-  alphanumeric(msg){ return this.pattern(/^[a-zA-Z0-9]+$/, msg || 'must be alphanumeric'); }
-  numeric(msg)    { return this.pattern(/^[0-9]+$/, msg || 'must contain only digits'); }
-  uuid(msg)       { return this.pattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, msg || 'must be a valid UUID'); }
-  slug(msg)       { return this.pattern(/^[a-z0-9-]+$/, msg || 'must be a valid slug'); }
-
-  _parse(value, path, errors) {
+  _validate(value, path) {
     if (typeof value !== 'string') {
-      errors.push({ path, message: (this._label || path || 'value') + ' must be a string' });
-      return value;
+      if (typeof value === 'number' || typeof value === 'boolean') value = String(value);
+      else return { ok: false, value: null, errors: [{ path, message: `Must be a string, got ${typeof value}` }] };
     }
-    let v = value;
-    if (this._trim) v = v.trim();
-    if (this._uppercase) v = v.toUpperCase();
-    if (this._lowercase) v = v.toLowerCase();
-    const label = this._label || path || 'value';
-    if (this._minLen !== null && v.length < this._minLen)
-      errors.push({ path, message: this._minMsg || `${label} must be at least ${this._minLen} characters` });
-    if (this._maxLen !== null && v.length > this._maxLen)
-      errors.push({ path, message: this._maxMsg || `${label} must be at most ${this._maxLen} characters` });
-    if (this._pattern && !this._pattern.test(v))
-      errors.push({ path, message: this._patMsg || `${label} has invalid format` });
-    if (this._email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))
-      errors.push({ path, message: this._emailMsg || `${label} must be a valid email` });
-    if (this._url) {
-      try { new URL(v); } catch {
-        errors.push({ path, message: this._urlMsg || `${label} must be a valid URL` });
-      }
-    }
-    if (this._oneOf && !this._oneOf.includes(v))
-      errors.push({ path, message: this._oneOfMsg || `${label} must be one of: ${this._oneOf.join(', ')}` });
-    if (this._notOneOf && this._notOneOf.includes(v))
-      errors.push({ path, message: this._notOneOfMsg || `${label} is not allowed` });
-    return v;
+    const errors = this._runChecks(value, path);
+    if (errors.length) return { ok: false, value: null, errors };
+    return { ok: true, value, errors: [] };
   }
 }
+
+// ─── Number ───────────────────────────────────────────────────────────────────
 
 class NumberSchema extends Schema {
-  constructor() {
-    super();
-    this._min = null; this._max = null;
-    this._integer = false; this._positive = false; this._negative = false;
-    this._multipleOf = null;
-  }
+  constructor() { super('number'); }
 
-  min(n, msg)       { this._min = n; this._minMsg = msg; return this; }
-  max(n, msg)       { this._max = n; this._maxMsg = msg; return this; }
-  integer(msg)      { this._integer = true; this._intMsg = msg; return this; }
-  positive(msg)     { this._positive = true; this._posMsg = msg; return this; }
-  negative(msg)     { this._negative = true; this._negMsg = msg; return this; }
-  multipleOf(n, msg){ this._multipleOf = n; this._multipleOfMsg = msg; return this; }
-  port()            { return this.integer().min(1).max(65535); }
+  min(n, msg)      { return this._check(v => v >= n || (msg || `Must be >= ${n}`)); }
+  max(n, msg)      { return this._check(v => v <= n || (msg || `Must be <= ${n}`)); }
+  gt(n, msg)       { return this._check(v => v >  n || (msg || `Must be > ${n}`)); }
+  lt(n, msg)       { return this._check(v => v <  n || (msg || `Must be < ${n}`)); }
+  positive(msg)    { return this._check(v => v > 0  || (msg || 'Must be positive')); }
+  negative(msg)    { return this._check(v => v < 0  || (msg || 'Must be negative')); }
+  nonnegative(msg) { return this._check(v => v >= 0 || (msg || 'Must be non-negative')); }
+  int(msg)         { return this._check(v => Number.isInteger(v) || (msg || 'Must be an integer')); }
+  finite(msg)      { return this._check(v => isFinite(v)         || (msg || 'Must be finite')); }
+  multipleOf(n, msg) { return this._check(v => v % n === 0       || (msg || `Must be a multiple of ${n}`)); }
+  between(min, max, msg) { return this._check(v => v >= min && v <= max || (msg || `Must be between ${min} and ${max}`)); }
 
-  _parse(value, path, errors) {
-    const n = typeof value === 'string' ? Number(value) : value;
-    if (typeof n !== 'number' || isNaN(n)) {
-      errors.push({ path, message: (this._label || path || 'value') + ' must be a number' });
-      return value;
+  _validate(value, path) {
+    if (typeof value === 'string' && !isNaN(value) && value.trim() !== '') value = Number(value);
+    if (typeof value !== 'number' || isNaN(value)) {
+      return { ok: false, value: null, errors: [{ path, message: `Must be a number, got ${typeof value}` }] };
     }
-    const label = this._label || path || 'value';
-    if (this._integer && !Number.isInteger(n))
-      errors.push({ path, message: this._intMsg || `${label} must be an integer` });
-    if (this._positive && n <= 0)
-      errors.push({ path, message: this._posMsg || `${label} must be positive` });
-    if (this._negative && n >= 0)
-      errors.push({ path, message: this._negMsg || `${label} must be negative` });
-    if (this._min !== null && n < this._min)
-      errors.push({ path, message: this._minMsg || `${label} must be >= ${this._min}` });
-    if (this._max !== null && n > this._max)
-      errors.push({ path, message: this._maxMsg || `${label} must be <= ${this._max}` });
-    if (this._multipleOf !== null && n % this._multipleOf !== 0)
-      errors.push({ path, message: this._multipleOfMsg || `${label} must be a multiple of ${this._multipleOf}` });
-    return n;
+    const errors = this._runChecks(value, path);
+    if (errors.length) return { ok: false, value: null, errors };
+    return { ok: true, value, errors: [] };
   }
 }
+
+// ─── Boolean ─────────────────────────────────────────────────────────────────
 
 class BooleanSchema extends Schema {
-  _parse(value, path, errors) {
-    if (typeof value === 'boolean') return value;
-    if (value === 'true' || value === 1 || value === '1') return true;
-    if (value === 'false' || value === 0 || value === '0') return false;
-    errors.push({ path, message: (this._label || path || 'value') + ' must be a boolean' });
-    return value;
+  constructor() { super('boolean'); }
+
+  _validate(value, path) {
+    if (value === 'true' || value === 1)  value = true;
+    if (value === 'false' || value === 0) value = false;
+    if (typeof value !== 'boolean') {
+      return { ok: false, value: null, errors: [{ path, message: `Must be a boolean, got ${typeof value}` }] };
+    }
+    return { ok: true, value, errors: [] };
   }
 }
+
+// ─── Date ─────────────────────────────────────────────────────────────────────
+
+class DateSchema extends Schema {
+  constructor() { super('date'); }
+
+  min(d, msg) { return this._check(v => v >= new Date(d) || (msg || `Must be after ${d}`)); }
+  max(d, msg) { return this._check(v => v <= new Date(d) || (msg || `Must be before ${d}`)); }
+  past(msg)   { return this._check(v => v < new Date()   || (msg || 'Must be in the past')); }
+  future(msg) { return this._check(v => v > new Date()   || (msg || 'Must be in the future')); }
+
+  _validate(value, path) {
+    if (!(value instanceof Date)) {
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return { ok: false, value: null, errors: [{ path, message: 'Must be a valid date' }] };
+      value = d;
+    }
+    const errors = this._runChecks(value, path);
+    if (errors.length) return { ok: false, value: null, errors };
+    return { ok: true, value, errors: [] };
+  }
+}
+
+// ─── Array ────────────────────────────────────────────────────────────────────
 
 class ArraySchema extends Schema {
-  constructor(itemSchema) {
-    super();
-    this._item = itemSchema;
-    this._minLen = null; this._maxLen = null;
-    this._unique = false;
-  }
+  constructor(itemSchema) { super('array'); this._item = itemSchema; }
 
-  item(schema)   { this._item = schema; return this; }
-  min(n, msg)    { this._minLen = n; this._minMsg = msg; return this; }
-  max(n, msg)    { this._maxLen = n; this._maxMsg = msg; return this; }
-  nonempty(msg)  { return this.min(1, msg || 'array must not be empty'); }
-  unique(msg)    { this._unique = true; this._uniqueMsg = msg; return this; }
+  min(n, msg)    { return this._check(v => v.length >= n || (msg || `Must have at least ${n} items`)); }
+  max(n, msg)    { return this._check(v => v.length <= n || (msg || `Must have at most ${n} items`)); }
+  length(n, msg) { return this._check(v => v.length === n || (msg || `Must have exactly ${n} items`)); }
+  nonempty(msg)  { return this._check(v => v.length > 0  || (msg || 'Must not be empty')); }
+  unique(msg)    { return this._check(v => new Set(v).size === v.length || (msg || 'Items must be unique')); }
 
-  _parse(value, path, errors) {
+  _validate(value, path) {
     if (!Array.isArray(value)) {
-      errors.push({ path, message: (this._label || path || 'value') + ' must be an array' });
-      return value;
+      return { ok: false, value: null, errors: [{ path, message: `Must be an array, got ${typeof value}` }] };
     }
-    const label = this._label || path || 'value';
-    if (this._minLen !== null && value.length < this._minLen)
-      errors.push({ path, message: this._minMsg || `${label} must have at least ${this._minLen} items` });
-    if (this._maxLen !== null && value.length > this._maxLen)
-      errors.push({ path, message: this._maxMsg || `${label} must have at most ${this._maxLen} items` });
-    if (this._unique) {
-      const seen = new Set();
-      for (const item of value) {
-        const key = JSON.stringify(item);
-        if (seen.has(key)) { errors.push({ path, message: this._uniqueMsg || `${label} must have unique items` }); break; }
-        seen.add(key);
+    const errors  = this._runChecks(value, path);
+    if (errors.length) return { ok: false, value: null, errors };
+    const result  = [];
+    const allErrs = [...errors];
+    for (let i = 0; i < value.length; i++) {
+      if (this._item) {
+        const r = this._item.validate(value[i], path ? `${path}[${i}]` : `[${i}]`);
+        if (!r.ok) allErrs.push(...r.errors);
+        else result.push(r.value);
+      } else {
+        result.push(value[i]);
       }
     }
-    if (!this._item) return value;
-    const result = [];
-    for (let i = 0; i < value.length; i++) {
-      const { value: v, errors: errs } = this._item.parse(value[i], `${path}[${i}]`);
-      errors.push(...errs);
-      result.push(v);
-    }
-    return result;
+    if (allErrs.length) return { ok: false, value: null, errors: allErrs };
+    return { ok: true, value: result, errors: [] };
   }
 }
+
+// ─── Object ───────────────────────────────────────────────────────────────────
 
 class ObjectSchema extends Schema {
   constructor(shape) {
-    super();
-    this._shape = shape || {};
-    this._allowUnknown = false;
-    this._stripUnknown = false;
+    super('object');
+    this._shape  = shape  || {};
+    this._strict = false;
+    this._strip  = false;
   }
 
-  shape(s)       { this._shape = s; return this; }
-  unknown()      { this._allowUnknown = true; return this; }
-  stripUnknown() { this._stripUnknown = true; return this; }
-  extend(extra)  { return new ObjectSchema(Object.assign({}, this._shape, extra)); }
-  pick(...keys)  { const s={}; for(const k of keys) if(this._shape[k]) s[k]=this._shape[k]; return new ObjectSchema(s); }
-  omit(...keys)  { const s=Object.assign({},this._shape); for(const k of keys) delete s[k]; return new ObjectSchema(s); }
-  partial()      { const s={}; for(const [k,v] of Object.entries(this._shape)) s[k]=v.optional(); return new ObjectSchema(s); }
+  strict(v)    { this._strict = v !== false; return this; }
+  strip()      { this._strip  = true;         return this; }
+  passthrough(){ this._strict = false; this._strip = false; return this; }
 
-  _parse(value, path, errors) {
+  extend(extra) {
+    return new ObjectSchema(Object.assign({}, this._shape, extra));
+  }
+
+  pick(...keys) {
+    const shape = {};
+    keys.forEach(k => { if (this._shape[k]) shape[k] = this._shape[k]; });
+    return new ObjectSchema(shape);
+  }
+
+  omit(...keys) {
+    const shape = Object.assign({}, this._shape);
+    keys.forEach(k => delete shape[k]);
+    return new ObjectSchema(shape);
+  }
+
+  partial() {
+    const shape = {};
+    for (const [k, v] of Object.entries(this._shape)) {
+      shape[k] = Object.assign(Object.create(Object.getPrototypeOf(v)), v, { _optional: true });
+    }
+    return new ObjectSchema(shape);
+  }
+
+  _validate(value, path) {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      errors.push({ path, message: (this._label || path || 'value') + ' must be an object' });
-      return value;
+      return { ok: false, value: null, errors: [{ path, message: `Must be an object, got ${Array.isArray(value) ? 'array' : typeof value}` }] };
     }
+    const errors = [];
     const result = {};
-    const knownKeys = new Set(Object.keys(this._shape));
-    // Validate known keys
+
     for (const [key, schema] of Object.entries(this._shape)) {
-      const childPath = path ? `${path}.${key}` : key;
-      const { value: v, errors: errs } = schema.parse(value[key], childPath);
-      errors.push(...errs);
-      if (v !== undefined) result[key] = v;
+      const fieldPath = path ? `${path}.${key}` : key;
+      const r = schema.validate(value[key], fieldPath);
+      if (!r.ok) errors.push(...r.errors);
+      else if (r.value !== undefined) result[key] = r.value;
     }
-    // Handle unknown keys
-    for (const key of Object.keys(value)) {
-      if (knownKeys.has(key)) continue;
-      if (this._stripUnknown) continue;
-      if (!this._allowUnknown) {
-        errors.push({ path: path ? `${path}.${key}` : key, message: `unknown key "${key}"` });
-      } else {
-        result[key] = value[key];
+
+    if (this._strict || this._strip) {
+      const known = new Set(Object.keys(this._shape));
+      for (const key of Object.keys(value)) {
+        if (!known.has(key)) {
+          if (this._strict) errors.push({ path: path ? `${path}.${key}` : key, message: `Unknown field: ${key}` });
+        } else if (!this._strip) {
+          result[key] = result[key] ?? value[key];
+        }
+      }
+    } else {
+      Object.assign(result, value);
+      for (const [k, v] of Object.entries(result)) {
+        if (this._shape[k] !== undefined) result[k] = result[k];
       }
     }
-    return result;
+
+    if (errors.length) return { ok: false, value: null, errors };
+    return { ok: true, value: result, errors: [] };
   }
 }
+
+// ─── Union / Discriminated Union ─────────────────────────────────────────────
 
 class UnionSchema extends Schema {
-  constructor(schemas) {
-    super();
-    this._schemas = schemas;
-  }
+  constructor(schemas) { super('union'); this._schemas = schemas; }
 
-  _parse(value, path, errors) {
-    for (const schema of this._schemas) {
-      const { value: v, errors: errs } = schema.parse(value, path);
-      if (errs.length === 0) return v;
+  _validate(value, path) {
+    const allErrors = [];
+    for (const s of this._schemas) {
+      const r = s.validate(value, path);
+      if (r.ok) return r;
+      allErrors.push(...r.errors);
     }
-    errors.push({ path, message: (this._label || path || 'value') + ' does not match any allowed type' });
-    return value;
+    return { ok: false, value: null, errors: [{ path, message: `Does not match any of the expected types` }] };
   }
 }
+
+// ─── Literal ─────────────────────────────────────────────────────────────────
 
 class LiteralSchema extends Schema {
-  constructor(literal) { super(); this._literal = literal; }
-  _parse(value, path, errors) {
-    if (value !== this._literal)
-      errors.push({ path, message: `${this._label || path || 'value'} must be ${JSON.stringify(this._literal)}` });
-    return value;
+  constructor(literal) { super('literal'); this._literal = literal; }
+
+  _validate(value, path) {
+    if (value !== this._literal) {
+      return { ok: false, value: null, errors: [{ path, message: `Must be ${JSON.stringify(this._literal)}` }] };
+    }
+    return { ok: true, value, errors: [] };
   }
 }
+
+// ─── Enum ─────────────────────────────────────────────────────────────────────
+
+class EnumSchema extends Schema {
+  constructor(values) { super('enum'); this._values = values; }
+
+  _validate(value, path) {
+    if (!this._values.includes(value)) {
+      return { ok: false, value: null, errors: [{ path, message: `Must be one of: ${this._values.map(v => JSON.stringify(v)).join(', ')}` }] };
+    }
+    return { ok: true, value, errors: [] };
+  }
+}
+
+// ─── Any / Unknown ────────────────────────────────────────────────────────────
 
 class AnySchema extends Schema {
-  _parse(value) { return value; }
+  constructor() { super('any'); }
+  _validate(value, path) { return { ok: true, value, errors: [] }; }
 }
 
-class DateSchema extends Schema {
-  constructor() { super(); this._min = null; this._max = null; }
-  min(d, msg) { this._min = d instanceof Date ? d : new Date(d); this._minMsg = msg; return this; }
-  max(d, msg) { this._max = d instanceof Date ? d : new Date(d); this._maxMsg = msg; return this; }
-  _parse(value, path, errors) {
-    const d = value instanceof Date ? value : new Date(value);
-    if (isNaN(d.getTime())) {
-      errors.push({ path, message: (this._label || path || 'value') + ' must be a valid date' });
-      return value;
+// ─── Intersection ─────────────────────────────────────────────────────────────
+
+class IntersectionSchema extends Schema {
+  constructor(schemas) { super('intersection'); this._schemas = schemas; }
+
+  _validate(value, path) {
+    let current = value;
+    for (const s of this._schemas) {
+      const r = s.validate(current, path);
+      if (!r.ok) return r;
+      current = r.value;
     }
-    if (this._min && d < this._min) errors.push({ path, message: this._minMsg || `${path||'date'} must be after ${this._min.toISOString()}` });
-    if (this._max && d > this._max) errors.push({ path, message: this._maxMsg || `${path||'date'} must be before ${this._max.toISOString()}` });
-    return d;
+    return { ok: true, value: current, errors: [] };
   }
 }
 
-// ── Builder API ──────────────────────────────────────────────────────────────
+// ─── Record ───────────────────────────────────────────────────────────────────
 
-const v = {
-  string:  ()      => new StringSchema(),
-  number:  ()      => new NumberSchema(),
-  boolean: ()      => new BooleanSchema(),
-  array:   (item)  => new ArraySchema(item),
-  object:  (shape) => new ObjectSchema(shape),
-  union:   (...schemas) => new UnionSchema(schemas.flat()),
-  literal: (val)   => new LiteralSchema(val),
-  any:     ()      => new AnySchema(),
-  date:    ()      => new DateSchema(),
-  email:   (msg)   => new StringSchema().email(msg),
-  url:     (msg)   => new StringSchema().url(msg),
-  uuid:    (msg)   => new StringSchema().uuid(msg),
-  int:     ()      => new NumberSchema().integer(),
-  positive:()      => new NumberSchema().positive(),
-  id:      ()      => new NumberSchema().integer().positive(),
+class RecordSchema extends Schema {
+  constructor(keySchema, valueSchema) { super('record'); this._key = keySchema; this._value = valueSchema; }
+
+  _validate(value, path) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return { ok: false, value: null, errors: [{ path, message: 'Must be an object' }] };
+    }
+    const result = {}, errors = [];
+    for (const [k, v] of Object.entries(value)) {
+      const fp = path ? `${path}.${k}` : k;
+      if (this._key) {
+        const kr = this._key.validate(k, fp + ' (key)');
+        if (!kr.ok) { errors.push(...kr.errors); continue; }
+      }
+      if (this._value) {
+        const vr = this._value.validate(v, fp);
+        if (!vr.ok) { errors.push(...vr.errors); continue; }
+        result[k] = vr.value;
+      } else {
+        result[k] = v;
+      }
+    }
+    if (errors.length) return { ok: false, value: null, errors };
+    return { ok: true, value: result, errors: [] };
+  }
+}
+
+// ─── Builder API ──────────────────────────────────────────────────────────────
+
+const schema = {
+  string:       ()        => new StringSchema(),
+  number:       ()        => new NumberSchema(),
+  boolean:      ()        => new BooleanSchema(),
+  date:         ()        => new DateSchema(),
+  array:        (item)    => new ArraySchema(item),
+  object:       (shape)   => new ObjectSchema(shape),
+  union:        (...s)    => new UnionSchema(s.flat()),
+  intersection: (...s)    => new IntersectionSchema(s.flat()),
+  literal:      (val)     => new LiteralSchema(val),
+  enum:         (vals)    => new EnumSchema(vals),
+  record:       (k, v)    => new RecordSchema(k, v),
+  any:          ()        => new AnySchema(),
+  unknown:      ()        => new AnySchema(),
+  never:        ()        => ({ validate: () => ({ ok: false, value: null, errors: [{ path: '', message: 'Never matches' }] }) }),
+  optional:     (s)       => { s._optional = true; return s; },
+  nullable:     (s)       => { s._nullable = true; return s; },
+  coerce: {
+    string:  () => new StringSchema().transform(v => String(v)),
+    number:  () => new NumberSchema(),
+    boolean: () => new BooleanSchema(),
+    date:    () => new DateSchema(),
+  },
 };
 
+function validate(schm, value) { return schm.validate(value); }
+function parse_(schm, value)   { return schm.parse(value); }
+
 module.exports = {
-  v, ValidationError, Schema,
-  StringSchema, NumberSchema, BooleanSchema, ArraySchema, ObjectSchema, UnionSchema, LiteralSchema,
-  // Convenience factory functions (for destructured imports)
-  string:  () => new StringSchema(),
-  number:  () => new NumberSchema(),
-  boolean: () => new BooleanSchema(),
-  array:   (item)  => new ArraySchema(item),
-  object:  (shape) => new ObjectSchema(shape),
-  union:   (...schemas) => new UnionSchema(schemas.flat()),
-  literal: (val)   => new LiteralSchema(val),
-  any:     ()      => new AnySchema(),
-  date:    ()      => new DateSchema(),
-  email:   (msg)   => new StringSchema().email(msg),
-  url:     (msg)   => new StringSchema().url(msg),
-  uuid:    (msg)   => new StringSchema().uuid(msg),
-  int:     ()      => new NumberSchema().integer(),
-  positive:()      => new NumberSchema().positive(),
+  schema, validate, parse: parse_,
+  ValidationError,
+  StringSchema, NumberSchema, BooleanSchema, DateSchema,
+  ArraySchema, ObjectSchema, UnionSchema, LiteralSchema,
+  EnumSchema, AnySchema, RecordSchema, IntersectionSchema,
 };

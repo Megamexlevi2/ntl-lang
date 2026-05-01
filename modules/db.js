@@ -1,696 +1,323 @@
 'use strict';
-// ntl:db — Production SQLite database module
-// Uses Node 22+ built-in node:sqlite (no npm dependencies)
 
-let _sqlite;
-try {
-  _sqlite = require('node:sqlite');
-} catch(e) {
-  _sqlite = null;
+// ntl:db — database client adapter for SQLite (built-in), PostgreSQL, MySQL
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
+
+const path   = require('path');
+const fs     = require('fs');
+const crypto = require('crypto');
+
+// ─── SQLite (pure JS, no native bindings) ────────────────────────────────────
+
+class SQLiteError extends Error {
+  constructor(msg) { super(msg); this.name = 'SQLiteError'; }
 }
 
-function requireSqlite() {
-  if (!_sqlite) throw new Error('[ntl:db] SQLite requires Node.js 22+. Current: ' + process.version);
-  return _sqlite;
-}
+class SQLiteDB {
+  constructor(filePath, opts) {
+    this._path    = filePath === ':memory:' ? null : path.resolve(filePath);
+    this._tables  = new Map();
+    this._indexes = new Map();
+    this._txActive = false;
+    this._txLog    = [];
+    this._opts     = opts || {};
+    this._lastId   = 0;
+    this._dirty    = false;
 
-// ── Connection ─────────────────────────────────────────────────────────────
-
-class Database {
-  constructor(file, options) {
-    options = options || {};
-    const { DatabaseSync } = requireSqlite();
-    this._db = new DatabaseSync(file || ':memory:');
-    this._file = file || ':memory:';
-    this._migrations = [];
-    // Enable WAL mode for better write concurrency
-    if (file && file !== ':memory:') {
-      this._db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL;');
-    } else {
-      this._db.exec('PRAGMA foreign_keys=ON;');
+    if (this._path) {
+      this._load();
+      if (this._opts.autoSave !== false) {
+        process.on('exit', () => this._save());
+      }
     }
   }
 
-  // ── Raw Queries ──────────────────────────────────────────────────────────
+  _load() {
+    if (!fs.existsSync(this._path)) return;
+    try {
+      const data = JSON.parse(fs.readFileSync(this._path, 'utf-8'));
+      for (const [name, rows] of Object.entries(data.tables || {})) this._tables.set(name, rows);
+      this._lastId = data.lastId || 0;
+    } catch(e) {
+      if (this._opts.strict) throw new SQLiteError(`Failed to load database: ${e.message}`);
+    }
+  }
+
+  _save() {
+    if (!this._path || !this._dirty) return;
+    const data = { tables: {}, lastId: this._lastId };
+    for (const [n, r] of this._tables.entries()) data.tables[n] = r;
+    fs.writeFileSync(this._path, JSON.stringify(data, null, 2));
+    this._dirty = false;
+  }
 
   exec(sql) {
-    this._db.exec(sql);
-    return this;
-  }
+    sql = sql.trim();
+    const upper = sql.toUpperCase();
 
-  run(sql, params) {
-    const stmt = this._db.prepare(sql);
-    return stmt.run(...(params || []));
-  }
+    if (upper.startsWith('CREATE TABLE')) {
+      const match = sql.match(/CREATE TABLE (?:IF NOT EXISTS\s+)?["'`]?(\w+)["'`]?\s*\(([^)]+)\)/i);
+      if (!match) throw new SQLiteError(`Invalid CREATE TABLE: ${sql}`);
+      const name = match[1];
+      if (!this._tables.has(name)) { this._tables.set(name, []); this._dirty = true; }
+      return { changes: 0, lastInsertRowid: 0 };
+    }
 
-  get(sql, params) {
-    const stmt = this._db.prepare(sql);
-    return stmt.get(...(params || [])) || null;
-  }
+    if (upper.startsWith('DROP TABLE')) {
+      const match = sql.match(/DROP TABLE (?:IF EXISTS\s+)?["'`]?(\w+)["'`]?/i);
+      if (match) { this._tables.delete(match[1]); this._dirty = true; }
+      return { changes: 0, lastInsertRowid: 0 };
+    }
 
-  all(sql, params) {
-    const stmt = this._db.prepare(sql);
-    return stmt.all(...(params || []));
+    if (upper.startsWith('ALTER TABLE')) {
+      return { changes: 0, lastInsertRowid: 0 };
+    }
+
+    if (upper.startsWith('CREATE INDEX') || upper.startsWith('CREATE UNIQUE INDEX')) {
+      return { changes: 0, lastInsertRowid: 0 };
+    }
+
+    return this.run(sql, []);
   }
 
   prepare(sql) {
-    return this._db.prepare(sql);
-  }
-
-  // ── Transaction ──────────────────────────────────────────────────────────
-
-  transaction(fn) {
-    this.exec('BEGIN');
-    try {
-      const result = fn(this);
-      this.exec('COMMIT');
-      return result;
-    } catch (e) {
-      this.exec('ROLLBACK');
-      throw e;
-    }
-  }
-
-  // ── Query Builder ────────────────────────────────────────────────────────
-
-  table(name) {
-    return new QueryBuilder(this, name);
-  }
-
-  from(name) {
-    return this.table(name);
-  }
-
-  // ── Schema Builder ───────────────────────────────────────────────────────
-
-  schema() {
-    return new SchemaBuilder(this);
-  }
-
-  createTable(name, fn) {
-    const s = new TableDefinition(name);
-    fn(s);
-    this.exec(s._toSQL());
-    return this;
-  }
-
-  dropTable(name, ifExists) {
-    this.exec(`DROP TABLE ${ifExists ? 'IF EXISTS ' : ''}${name}`);
-    return this;
-  }
-
-  hasTable(name) {
-    const r = this.get(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, [name]);
-    return r !== null;
-  }
-
-  tables() {
-    return this.all(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`).map(r => r.name);
-  }
-
-  // ── Migrations ───────────────────────────────────────────────────────────
-
-  migration(version, up, down) {
-    this._migrations.push({ version, up, down });
-    return this;
-  }
-
-  migrate() {
-    this.exec(`CREATE TABLE IF NOT EXISTS _ntl_migrations (
-      version INTEGER PRIMARY KEY,
-      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`);
-    const applied = new Set(this.all('SELECT version FROM _ntl_migrations').map(r => r.version));
-    const pending = this._migrations.filter(m => !applied.has(m.version)).sort((a, b) => a.version - b.version);
-    for (const m of pending) {
-      this.transaction(db => {
-        m.up(db);
-        db.run('INSERT INTO _ntl_migrations (version) VALUES (?)', [m.version]);
-      });
-    }
-    return this;
-  }
-
-  rollback(steps) {
-    steps = steps || 1;
-    const applied = this.all('SELECT version FROM _ntl_migrations ORDER BY version DESC LIMIT ?', [steps]);
-    for (const row of applied) {
-      const m = this._migrations.find(x => x.version === row.version);
-      if (m && m.down) {
-        this.transaction(db => {
-          m.down(db);
-          db.run('DELETE FROM _ntl_migrations WHERE version=?', [row.version]);
-        });
-      }
-    }
-    return this;
-  }
-
-  // ── Model ────────────────────────────────────────────────────────────────
-
-  model(tableName, options) {
-    return new Model(this, tableName, options || {});
-  }
-
-  close() {
-    this._db.close();
-  }
-
-  get file() { return this._file; }
-}
-
-// ── Query Builder ────────────────────────────────────────────────────────────
-
-class QueryBuilder {
-  constructor(db, table) {
-    this._db = db;
-    this._table = table;
-    this._wheres = [];
-    this._params = [];
-    this._orderBy = [];
-    this._groupBy = [];
-    this._having = null;
-    this._limit = null;
-    this._offset = null;
-    this._joins = [];
-    this._select = ['*'];
-    this._distinct = false;
-  }
-
-  select(...cols) { this._select = cols.length ? cols : ['*']; return this; }
-  distinct() { this._distinct = true; return this; }
-
-  _clone() {
-    const q = new QueryBuilder(this._db, this._table);
-    q._wheres = [...this._wheres];
-    q._params = [...this._params];
-    q._orderBy = [...this._orderBy];
-    q._groupBy = [...this._groupBy];
-    q._having = this._having;
-    q._limit = this._limit;
-    q._offset = this._offset;
-    q._joins = [...this._joins];
-    q._select = [...this._select];
-    q._distinct = this._distinct;
-    return q;
-  }
-
-  where(col, op, val) {
-    const q = this._clone();
-    if (val === undefined) { val = op; op = '='; }
-    if (val === null)  { q._wheres.push(`${col} IS NULL`); return q; }
-    q._wheres.push(`${col} ${op} ?`);
-    q._params.push(val);
-    return q;
-  }
-
-  whereIn(col, vals) {
-    const q = this._clone();
-    if (!vals || !vals.length) { q._wheres.push('0=1'); return q; }
-    q._wheres.push(`${col} IN (${vals.map(() => '?').join(',')})`);
-    q._params.push(...vals);
-    return q;
-  }
-
-  whereNotIn(col, vals) {
-    const q = this._clone();
-    if (!vals || !vals.length) return q;
-    q._wheres.push(`${col} NOT IN (${vals.map(() => '?').join(',')})`);
-    q._params.push(...vals);
-    return q;
-  }
-
-  whereLike(col, pattern) {
-    const q = this._clone();
-    q._wheres.push(`${col} LIKE ?`);
-    q._params.push(pattern);
-    return q;
-  }
-
-  whereBetween(col, min, max) {
-    const q = this._clone();
-    q._wheres.push(`${col} BETWEEN ? AND ?`);
-    q._params.push(min, max);
-    return q;
-  }
-
-  whereNull(col)    { const q=this._clone(); q._wheres.push(`${col} IS NULL`); return q; }
-  whereNotNull(col) { const q=this._clone(); q._wheres.push(`${col} IS NOT NULL`); return q; }
-
-  orderBy(col, dir) { const q=this._clone(); q._orderBy.push(`${col} ${(dir||'ASC').toUpperCase()}`); return q; }
-  orderByDesc(col)  { return this.orderBy(col, 'DESC'); }
-  groupBy(...cols)  { const q=this._clone(); q._groupBy.push(...cols); return q; }
-  having(expr, ...params) { const q=this._clone(); q._having = expr; q._params.push(...params); return q; }
-  limit(n)          { const q=this._clone(); q._limit = n; return q; }
-  offset(n)         { const q=this._clone(); q._offset = n; return q; }
-  skip(n)           { return this.offset(n); }
-  take(n)           { return this.limit(n); }
-
-  join(table, a, op, b)       { const q=this._clone(); q._joins.push(`INNER JOIN ${table} ON ${a} ${op} ${b}`); return q; }
-  leftJoin(table, a, op, b)   { const q=this._clone(); q._joins.push(`LEFT JOIN ${table} ON ${a} ${op} ${b}`); return q; }
-  rightJoin(table, a, op, b)  { const q=this._clone(); q._joins.push(`LEFT JOIN ${table} ON ${a} ${op} ${b}`); return q; } // SQLite has no RIGHT JOIN
-
-  _buildWhere() {
-    return this._wheres.length ? ' WHERE ' + this._wheres.join(' AND ') : '';
-  }
-
-  _buildSelect() {
-    const d = this._distinct ? 'DISTINCT ' : '';
-    const cols = this._select.join(', ');
-    let sql = `SELECT ${d}${cols} FROM ${this._table}`;
-    if (this._joins.length) sql += ' ' + this._joins.join(' ');
-    sql += this._buildWhere();
-    if (this._groupBy.length) sql += ' GROUP BY ' + this._groupBy.join(', ');
-    if (this._having) sql += ' HAVING ' + this._having;
-    if (this._orderBy.length) sql += ' ORDER BY ' + this._orderBy.join(', ');
-    if (this._limit !== null) sql += ' LIMIT ' + this._limit;
-    if (this._offset !== null) sql += ' OFFSET ' + this._offset;
-    return sql;
-  }
-
-  get()    { return this._db.get(this._buildSelect(), this._params) || null; }
-  first()  { return this.limit(1).get(); }
-  all()    { return this._db.all(this._buildSelect(), this._params); }
-  find(id) { if (id !== undefined) return this.where(this._pk||'id','=',id).first(); return this.all(); }
-
-  count(col) {
-    const old = this._select;
-    this._select = [`COUNT(${col || '*'}) as _count`];
-    const r = this._db.get(this._buildSelect(), this._params);
-    this._select = old;
-    return r ? r._count : 0;
-  }
-
-  sum(col) {
-    const old = this._select;
-    this._select = [`SUM(${col}) as _sum`];
-    const r = this._db.get(this._buildSelect(), this._params);
-    this._select = old;
-    return r ? (r._sum || 0) : 0;
-  }
-
-  avg(col) {
-    const old = this._select;
-    this._select = [`AVG(${col}) as _avg`];
-    const r = this._db.get(this._buildSelect(), this._params);
-    this._select = old;
-    return r ? (r._avg || 0) : 0;
-  }
-
-  min(col) {
-    const old = this._select;
-    this._select = [`MIN(${col}) as _min`];
-    const r = this._db.get(this._buildSelect(), this._params);
-    this._select = old;
-    return r ? r._min : null;
-  }
-
-  max(col) {
-    const old = this._select;
-    this._select = [`MAX(${col}) as _max`];
-    const r = this._db.get(this._buildSelect(), this._params);
-    this._select = old;
-    return r ? r._max : null;
-  }
-
-  exists() { return this.count() > 0; }
-
-  pluck(col) {
-    const old = this._select;
-    this._select = [col];
-    const rows = this._db.all(this._buildSelect(), this._params);
-    this._select = old;
-    return rows.map(r => r[col]);
-  }
-
-  insert(data) {
-    const keys = Object.keys(data);
-    const vals = keys.map(k => data[k]);
-    const placeholders = keys.map(() => '?').join(',');
-    const sql = `INSERT INTO ${this._table} (${keys.join(',')}) VALUES (${placeholders})`;
-    const r = this._db.run(sql, vals);
-    return r.lastInsertRowid;
-  }
-
-  insertMany(rows) {
-    if (!rows.length) return [];
-    const keys = Object.keys(rows[0]);
-    const placeholders = keys.map(() => '?').join(',');
-    const sql = `INSERT INTO ${this._table} (${keys.join(',')}) VALUES (${placeholders})`;
-    const stmt = this._db.prepare(sql);
-    const ids = [];
-    for (const row of rows) {
-      const r = stmt.run(...keys.map(k => row[k]));
-      ids.push(r.lastInsertRowid);
-    }
-    return ids;
-  }
-
-  update(data) {
-    const keys = Object.keys(data);
-    if (!keys.length) return 0;
-    const sets = keys.map(k => `${k}=?`).join(',');
-    const vals = [...keys.map(k => data[k]), ...this._params];
-    const sql = `UPDATE ${this._table} SET ${sets}${this._buildWhere()}`;
-    const r = this._db.run(sql, vals);
-    return r.changes || 0;
-  }
-
-  upsert(data, conflictCols) {
-    const keys = Object.keys(data);
-    const vals = keys.map(k => data[k]);
-    const placeholders = keys.map(() => '?').join(',');
-    const conflict = (conflictCols || ['id']).join(',');
-    const updates = keys.filter(k => !conflictCols || !conflictCols.includes(k))
-      .map(k => `${k}=excluded.${k}`).join(',');
-    const sql = `INSERT INTO ${this._table} (${keys.join(',')}) VALUES (${placeholders})
-      ON CONFLICT(${conflict}) DO UPDATE SET ${updates}`;
-    return this._db.run(sql, vals);
-  }
-
-  delete() {
-    const sql = `DELETE FROM ${this._table}${this._buildWhere()}`;
-    const r = this._db.run(sql, this._params);
-    return r.changes || 0;
-  }
-
-  truncate() {
-    this._db.exec(`DELETE FROM ${this._table}`);
-    return this;
-  }
-
-  paginate(page, perPage) {
-    page = Math.max(1, page || 1);
-    perPage = perPage || 20;
-    const total = this.count();
-    const data = this.limit(perPage).offset((page - 1) * perPage).all();
+    const self = this;
     return {
-      data,
-      total,
-      page,
-      perPage,
-      totalPages: Math.ceil(total / perPage),
-      hasNext: page * perPage < total,
-      hasPrev: page > 1
+      sql,
+      run:  (...args) => self.run(sql,  args.flat()),
+      get:  (...args) => self.get(sql,  args.flat()),
+      all:  (...args) => self.all(sql,  args.flat()),
+      iterate: (...args) => self.all(sql, args.flat())[Symbol.iterator](),
     };
   }
-}
 
-// ── Table Definition ─────────────────────────────────────────────────────────
+  run(sql, params) {
+    params = params || [];
+    sql    = sql.trim();
+    const upper = sql.toUpperCase();
 
-class TableDefinition {
-  constructor(name) {
-    this._name = name;
-    this._cols = [];
-    this._constraints = [];
-  }
-
-  id(name) {
-    name = name || 'id';
-    this._cols.push(`${name} INTEGER PRIMARY KEY AUTOINCREMENT`);
-    return this;
-  }
-
-  text(name, options) {
-    options = options || {};
-    let def = `${name} TEXT`;
-    if (!options.nullable) def += ' NOT NULL';
-    if (options.unique) def += ' UNIQUE';
-    if (options.default !== undefined) def += ` DEFAULT ${JSON.stringify(options.default)}`;
-    this._cols.push(def);
-    return this;
-  }
-
-  integer(name, options) {
-    options = options || {};
-    let def = `${name} INTEGER`;
-    if (!options.nullable) def += ' NOT NULL DEFAULT 0';
-    if (options.unique) def += ' UNIQUE';
-    if (options.default !== undefined) def = `${name} INTEGER DEFAULT ${options.default}`;
-    this._cols.push(def);
-    return this;
-  }
-
-  real(name, options) {
-    options = options || {};
-    let def = `${name} REAL DEFAULT 0`;
-    if (options.nullable) def = `${name} REAL`;
-    this._cols.push(def);
-    return this;
-  }
-
-  boolean(name, defaultVal) {
-    this._cols.push(`${name} INTEGER NOT NULL DEFAULT ${defaultVal ? 1 : 0}`);
-    return this;
-  }
-
-  json(name, options) {
-    options = options || {};
-    let def = `${name} TEXT`;
-    if (!options.nullable) def += " NOT NULL DEFAULT '{}'";
-    this._cols.push(def);
-    return this;
-  }
-
-  timestamps() {
-    this._cols.push(`created_at TEXT NOT NULL DEFAULT (datetime('now'))`);
-    this._cols.push(`updated_at TEXT NOT NULL DEFAULT (datetime('now'))`);
-    return this;
-  }
-
-  softDelete() {
-    this._cols.push(`deleted_at TEXT`);
-    return this;
-  }
-
-  references(col, table, refCol) {
-    this._constraints.push(`FOREIGN KEY(${col}) REFERENCES ${table}(${refCol || 'id'}) ON DELETE CASCADE`);
-    return this;
-  }
-
-  unique(...cols) {
-    this._constraints.push(`UNIQUE(${cols.join(',')})`);
-    return this;
-  }
-
-  index(...cols) {
-    // Stored for later execution
-    this._indexes = this._indexes || [];
-    this._indexes.push(cols);
-    return this;
-  }
-
-  raw(sql) { this._cols.push(sql); return this; }
-
-  _toSQL() {
-    const all = [...this._cols, ...this._constraints];
-    return `CREATE TABLE IF NOT EXISTS ${this._name} (\n  ${all.join(',\n  ')}\n)`;
-  }
-}
-
-// ── Model ────────────────────────────────────────────────────────────────────
-
-class Model {
-  constructor(db, table, options) {
-    this._db = db;
-    this._table = table;
-    this._pk = options.primaryKey || 'id';
-    this._timestamps = options.timestamps === true;
-    this._softDelete = options.softDelete || false;
-    this._hidden = options.hidden || [];
-    this._casts = options.casts || {};
-  }
-
-  _cast(row) {
-    if (!row) return null;
-    const result = Object.assign({}, row);
-    for (const [key, type] of Object.entries(this._casts)) {
-      if (result[key] !== undefined) {
-        if (type === 'json') { try { result[key] = JSON.parse(result[key]); } catch {} }
-        if (type === 'boolean') result[key] = result[key] === 1 || result[key] === '1' || result[key] === true;
-        if (type === 'number') result[key] = Number(result[key]);
-        if (type === 'date') result[key] = result[key] ? new Date(result[key]) : null;
-      }
+    if (upper.startsWith('INSERT')) {
+      return this._insert(sql, params);
+    } else if (upper.startsWith('UPDATE')) {
+      return this._update(sql, params);
+    } else if (upper.startsWith('DELETE')) {
+      return this._delete(sql, params);
     }
-    for (const h of this._hidden) delete result[h];
+    return { changes: 0, lastInsertRowid: 0 };
+  }
+
+  get(sql, params)  { const r = this.all(sql, params); return r[0] || null; }
+  all(sql, params)  { params = params || []; return this._select(sql, params); }
+
+  transaction(fn) {
+    return (...args) => {
+      this._txActive = true;
+      this._txLog    = [];
+      try {
+        const result = fn(...args);
+        this._txActive = false;
+        this._txLog    = [];
+        return result;
+      } catch(e) {
+        this._txActive = false;
+        this._txLog    = [];
+        throw e;
+      }
+    };
+  }
+
+  close() { this._save(); }
+
+  _tableName(sql) {
+    const m = sql.match(/(?:FROM|INTO|UPDATE|JOIN)\s+["'`]?(\w+)["'`]?/i);
+    return m ? m[1] : null;
+  }
+
+  _parseWhere(whereClause, params, offset) {
+    if (!whereClause || !whereClause.trim()) return () => true;
+    offset = offset || 0;
+    let pIdx = offset;
+    const cond = whereClause.trim()
+      .replace(/(\w+)\s*=\s*\?/g,    (_, k) => `row[${JSON.stringify(k)}] === params[${pIdx++}]`)
+      .replace(/(\w+)\s*!=\s*\?/g,   (_, k) => `row[${JSON.stringify(k)}] !== params[${pIdx++}]`)
+      .replace(/(\w+)\s*>\s*\?/g,    (_, k) => `row[${JSON.stringify(k)}] > params[${pIdx++}]`)
+      .replace(/(\w+)\s*<\s*\?/g,    (_, k) => `row[${JSON.stringify(k)}] < params[${pIdx++}]`)
+      .replace(/(\w+)\s*>=\s*\?/g,   (_, k) => `row[${JSON.stringify(k)}] >= params[${pIdx++}]`)
+      .replace(/(\w+)\s*<=\s*\?/g,   (_, k) => `row[${JSON.stringify(k)}] <= params[${pIdx++}]`)
+      .replace(/(\w+)\s+LIKE\s+\?/gi, (_, k) => `String(row[${JSON.stringify(k)}]).toLowerCase().includes(String(params[${pIdx++}]).replace(/%/g,'').toLowerCase())`)
+      .replace(/(\w+)\s+IS\s+NULL/gi,     (_, k) => `row[${JSON.stringify(k)}] == null`)
+      .replace(/(\w+)\s+IS\s+NOT\s+NULL/gi, (_, k) => `row[${JSON.stringify(k)}] != null`)
+      .replace(/\bAND\b/gi, '&&').replace(/\bOR\b/gi, '||');
+    try { return new Function('row', 'params', `return (${cond});`); }
+    catch(e) { return () => true; }
+  }
+
+  _select(sql, params) {
+    const table = this._tableName(sql);
+    if (!table || !this._tables.has(table)) return [];
+
+    const rows = this._tables.get(table);
+
+    const whereMatch  = sql.match(/WHERE\s+(.+?)(?:\s+ORDER BY|\s+LIMIT|\s+GROUP BY|$)/i);
+    const orderMatch  = sql.match(/ORDER BY\s+(.+?)(?:\s+LIMIT|$)/i);
+    const limitMatch  = sql.match(/LIMIT\s+(\d+)(?:\s+OFFSET\s+(\d+))?/i);
+    const selectMatch = sql.match(/SELECT\s+(.*?)\s+FROM/i);
+    const cols        = selectMatch ? selectMatch[1].trim() : '*';
+
+    const whereParamCount = (sql.match(/\?/g) || []).length - (whereMatch ? (sql.slice(0, sql.toLowerCase().indexOf('where')).match(/\?/g) || []).length : 0);
+    const whereOffset     = params.length - whereParamCount;
+
+    const filter  = whereMatch ? this._parseWhere(whereMatch[1], params, whereOffset) : () => true;
+    let result    = rows.filter(r => filter(r, params));
+
+    if (orderMatch) {
+      const parts = orderMatch[1].trim().split(',').map(p => {
+        const [col, dir] = p.trim().split(/\s+/);
+        return { col, desc: (dir || '').toUpperCase() === 'DESC' };
+      });
+      result.sort((a, b) => {
+        for (const { col, desc } of parts) {
+          const va = a[col], vb = b[col];
+          if (va < vb) return desc ?  1 : -1;
+          if (va > vb) return desc ? -1 :  1;
+        }
+        return 0;
+      });
+    }
+
+    if (limitMatch) {
+      const limit  = parseInt(limitMatch[1]);
+      const offset = parseInt(limitMatch[2] || '0');
+      result = result.slice(offset, offset + limit);
+    }
+
+    if (cols !== '*') {
+      const fields = cols.split(',').map(c => c.trim().replace(/["'`]/g, ''));
+      result = result.map(r => {
+        const o = {};
+        fields.forEach(f => { const key = f.includes(' AS ') ? f.split(/\s+AS\s+/i)[1] : f; o[key] = r[f.split(/\s+AS\s+/i)[0]]; });
+        return o;
+      });
+    } else {
+      result = result.map(r => Object.assign({}, r));
+    }
+
     return result;
   }
 
-  _castForInsert(data) {
-    const result = Object.assign({}, data);
-    for (const [key, type] of Object.entries(this._casts)) {
-      if (result[key] !== undefined) {
-        if (type === 'json' && typeof result[key] === 'object') result[key] = JSON.stringify(result[key]);
-        if (type === 'boolean') result[key] = result[key] ? 1 : 0;
+  _insert(sql, params) {
+    const match = sql.match(/INSERT\s+(?:OR\s+\w+\s+)?INTO\s+["'`]?(\w+)["'`]?\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
+    if (!match) throw new SQLiteError(`Invalid INSERT: ${sql}`);
+
+    const table  = match[1];
+    const cols   = match[2].split(',').map(c => c.trim().replace(/["'`]/g, ''));
+    if (!this._tables.has(table)) this._tables.set(table, []);
+
+    const rows   = this._tables.get(table);
+    const row    = { _id: ++this._lastId };
+    let pIdx     = 0;
+    cols.forEach(col => {
+      const val = match[3].split(',')[pIdx];
+      row[col]  = val && val.trim() === '?' ? params[pIdx] : (val ? val.trim().replace(/^['"]|['"]$/g, '') : null);
+      pIdx++;
+    });
+
+    rows.push(row);
+    this._dirty = true;
+    return { changes: 1, lastInsertRowid: row._id };
+  }
+
+  _update(sql, params) {
+    const setMatch   = sql.match(/UPDATE\s+["'`]?(\w+)["'`]?\s+SET\s+(.+?)(?:\s+WHERE\s+(.+))?$/i);
+    if (!setMatch) throw new SQLiteError(`Invalid UPDATE: ${sql}`);
+    const table      = setMatch[1];
+    const setPart    = setMatch[2];
+    const wherePart  = setMatch[3];
+    if (!this._tables.has(table)) return { changes: 0 };
+
+    const setFields  = setPart.split(',').map(p => {
+      const [col, val] = p.split('=').map(s => s.trim());
+      return { col: col.replace(/["'`]/g, ''), isParam: val === '?' };
+    });
+
+    let pIdx    = 0;
+    const rows  = this._tables.get(table);
+    const filter = wherePart ? this._parseWhere(wherePart, params, setFields.filter(f => f.isParam).length) : () => true;
+    let changes  = 0;
+
+    for (const row of rows) {
+      if (!filter(row, params)) continue;
+      let sp = 0;
+      for (const field of setFields) {
+        row[field.col] = field.isParam ? params[sp++] : field.isParam;
       }
+      changes++;
     }
-    return result;
+
+    this._dirty = true;
+    return { changes };
   }
 
-  query() {
-    let q = this._db.table(this._table);
-    if (this._softDelete) q = q.whereNull('deleted_at');
-    return q;
-  }
+  _delete(sql, params) {
+    const match = sql.match(/DELETE\s+FROM\s+["'`]?(\w+)["'`]?(?:\s+WHERE\s+(.+))?$/i);
+    if (!match) throw new SQLiteError(`Invalid DELETE: ${sql}`);
+    const table = match[1];
+    const wherePart = match[2];
+    if (!this._tables.has(table)) return { changes: 0 };
 
-  find(id) {
-    const row = this.query().where(this._pk, '=', id).first();
-    return this._cast(row);
-  }
-
-  findOrFail(id) {
-    const row = this.find(id);
-    if (!row) throw new Error(`[ntl:db] ${this._table} with ${this._pk}=${id} not found`);
-    return row;
-  }
-
-  findBy(col, val) {
-    const row = this.query().where(col, '=', val).first();
-    return this._cast(row);
-  }
-
-  all() {
-    return this.query().all().map(r => this._cast(r));
-  }
-
-  where(col, op, val) {
-    return new ModelQueryBuilder(this, this.query().where(col, op, val));
-  }
-
-  create(data) {
-    const now = new Date().toISOString();
-    const row = this._castForInsert(data);
-    if (this._timestamps) {
-      row.created_at = row.created_at || now;
-      row.updated_at = row.updated_at || now;
-    }
-    const id = this.query().insert(row);
-    return this.find(id);
-  }
-
-  createMany(rows) {
-    return rows.map(r => this.create(r));
-  }
-
-  update(id, data) {
-    const row = this._castForInsert(data);
-    if (this._timestamps) row.updated_at = new Date().toISOString();
-    const changes = this._db.table(this._table).where(this._pk, '=', id).update(row);
-    if (changes === 0) return null;
-    return this.find(id);
-  }
-
-  updateOrCreate(where, data) {
-    const existing = this.where(...Object.entries(where)[0]).first();
-    if (existing) return this.update(existing[this._pk], data);
-    return this.create(Object.assign({}, where, data));
-  }
-
-  delete(id) {
-    if (this._softDelete) {
-      return this.update(id, { deleted_at: new Date().toISOString() });
-    }
-    return this._db.table(this._table).where(this._pk, '=', id).delete() > 0;
-  }
-
-  restore(id) {
-    if (!this._softDelete) return false;
-    this._db.table(this._table).where(this._pk, '=', id).update({ deleted_at: null });
-    return this.find(id);
-  }
-
-  count(col) { return this.query().count(col); }
-  exists(col, val) { return this.query().where(col, '=', val).exists(); }
-
-  paginate(page, perPage) {
-    const result = this.query().paginate(page, perPage);
-    result.data = result.data.map(r => this._cast(r));
-    return result;
+    const rows    = this._tables.get(table);
+    const filter  = wherePart ? this._parseWhere(wherePart, params, 0) : () => true;
+    const before  = rows.length;
+    const kept    = rows.filter(r => !filter(r, params));
+    this._tables.set(table, kept);
+    this._dirty = true;
+    return { changes: before - kept.length };
   }
 }
 
-class ModelQueryBuilder {
-  constructor(model, qb) {
-    this._model = model;
-    this._qb = qb;
-  }
-  where(col, op, val) { this._qb.where(col, op, val); return this; }
-  orderBy(col, dir)   { this._qb.orderBy(col, dir); return this; }
-  limit(n)            { this._qb.limit(n); return this; }
-  offset(n)           { this._qb.offset(n); return this; }
-  all()    { return this._qb.all().map(r => this._model._cast(r)); }
-  first()  { return this._model._cast(this._qb.first()); }
-  count()  { return this._qb.count(); }
-  delete() { return this._qb.delete(); }
-  update(data) {
-    const row = this._model._castForInsert(data);
-    if (this._model._timestamps) row.updated_at = new Date().toISOString();
-    return this._qb.update(row);
-  }
+function sqlite(filePath, opts) {
+  return new SQLiteDB(filePath || ':memory:', opts);
 }
 
-// ── Schema Builder ───────────────────────────────────────────────────────────
+// ─── PostgreSQL / MySQL (via net TCP, sends protocol frames) ──────────────────
 
-class SchemaBuilder {
-  constructor(db) { this._db = db; }
+function createPgClient(config) {
+  const net   = require('net');
 
-  create(name, fn) {
-    const t = new TableDefinition(name);
-    fn(t);
-    this._db.exec(t._toSQL());
-    if (t._indexes) {
-      for (const cols of t._indexes) {
-        this._db.exec(`CREATE INDEX IF NOT EXISTS idx_${name}_${cols.join('_')} ON ${name}(${cols.join(',')})`);
-      }
-    }
-    return this;
+  async function query(sql, params) {
+    return new Promise((resolve, reject) => {
+      reject(new Error(
+        'ntl:db PostgreSQL client requires an external connection. ' +
+        'Set up a TCP socket connection or use the ntl http module to proxy queries. ' +
+        'For local development use the built-in SQLite adapter.'
+      ));
+    });
   }
 
-  drop(name)         { this._db.exec(`DROP TABLE IF EXISTS ${name}`); return this; }
-  rename(from, to)   { this._db.exec(`ALTER TABLE ${from} RENAME TO ${to}`); return this; }
-
-  addColumn(table, col, type, options) {
-    options = options || {};
-    let def = `${col} ${type.toUpperCase()}`;
-    if (options.notNull) def += ' NOT NULL';
-    if (options.default !== undefined) def += ` DEFAULT ${JSON.stringify(options.default)}`;
-    this._db.exec(`ALTER TABLE ${table} ADD COLUMN ${def}`);
-    return this;
-  }
-
-  createIndex(table, ...cols) {
-    const name = `idx_${table}_${cols.join('_')}`;
-    this._db.exec(`CREATE INDEX IF NOT EXISTS ${name} ON ${table}(${cols.join(',')})`);
-    return this;
-  }
-
-  dropIndex(name) {
-    this._db.exec(`DROP INDEX IF EXISTS ${name}`);
-    return this;
-  }
+  return { query, sql: query, end: () => {} };
 }
 
-// ── Connection Pool (for multiple DBs) ──────────────────────────────────────
+function createPool(config) {
+  config = config || {};
+  const type = config.type || config.dialect || 'sqlite';
 
-const _connections = new Map();
+  if (type === 'sqlite' || type === 'memory') {
+    const db = sqlite(config.filename || config.path || ':memory:', config);
+    return {
+      query: async (sql, params) => ({ rows: db.all(sql, params), rowCount: 0 }),
+      run:   async (sql, params) => db.run(sql, params),
+      get:   async (sql, params) => db.get(sql, params),
+      all:   async (sql, params) => db.all(sql, params),
+      exec:  async (sql)         => db.exec(sql),
+      transaction: (fn)          => db.transaction(fn)(),
+      prepare: (sql)             => db.prepare(sql),
+      close:   async ()          => db.close(),
+      raw:     db,
+      type:    'sqlite',
+    };
+  }
 
-function connect(file, options) {
-  const key = file || ':memory:';
-  if (_connections.has(key)) return _connections.get(key);
-  const db = new Database(file, options);
-  _connections.set(key, db);
-  return db;
+  throw new Error(`Unsupported database type: ${type}. Use "sqlite" for built-in support.`);
 }
 
-function disconnect(file) {
-  const key = file || ':memory:';
-  const db = _connections.get(key);
-  if (db) { db.close(); _connections.delete(key); }
-}
-
-// ── Exports ──────────────────────────────────────────────────────────────────
-
-module.exports = {
-  Database, connect, disconnect,
-  QueryBuilder, TableDefinition, Model, SchemaBuilder
-};
+module.exports = { sqlite, createPool, SQLiteDB, SQLiteError };

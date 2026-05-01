@@ -1,96 +1,160 @@
 'use strict';
-const fs = require('fs');
 
-const LEVELS = { debug: 0, info: 1, warn: 2, error: 3, fatal: 4, silent: 99 };
+// ntl:logger — structured logging with levels, child loggers, file output
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
 
-const C = {
-  debug: '\x1b[90m',
-  info:  '\x1b[32m',
-  warn:  '\x1b[33m',
-  error: '\x1b[31m',
-  fatal: '\x1b[35m',
-  reset: '\x1b[0m',
-  dim:   '\x1b[2m',
-  bold:  '\x1b[1m',
-  gray:  '\x1b[90m',
-  cyan:  '\x1b[36m',
+const fs     = require('fs');
+const path   = require('path');
+const os     = require('os');
+const crypto = require('crypto');
+
+const LEVELS  = { trace: 10, debug: 20, info: 30, warn: 40, error: 50, fatal: 60, silent: Infinity };
+const COLORS  = {
+  trace: '\x1b[37m',  debug: '\x1b[36m', info:  '\x1b[32m',
+  warn:  '\x1b[33m',  error: '\x1b[31m', fatal: '\x1b[35m',
 };
+const RESET = '\x1b[0m';
+const GRAY  = '\x1b[90m';
+const BOLD  = '\x1b[1m';
+const DIM   = '\x1b[2m';
 
-const USE_COLOR = process.stderr && process.stderr.isTTY !== false && !process.env.NO_COLOR;
-const col = (color, text) => USE_COLOR ? `${C[color] || ''}${text}${C.reset}` : text;
-
-function shortTime() {
-  const d = new Date();
-  return [
-    String(d.getHours()).padStart(2,'0'),
-    String(d.getMinutes()).padStart(2,'0'),
-    String(d.getSeconds()).padStart(2,'0'),
-  ].join(':') + '.' + String(d.getMilliseconds()).padStart(3,'0');
+function levelName(n) {
+  return Object.entries(LEVELS).find(([, v]) => v === n)?.[0] || String(n);
 }
 
-function pretty(v) {
-  if (v === null || v === undefined) return col('gray', 'null');
-  if (typeof v === 'boolean') return col('cyan', String(v));
-  if (typeof v === 'number') return col('cyan', String(v));
-  if (typeof v === 'string') return v;
-  if (v instanceof Error) return col('error', `${v.name}: ${v.message}`);
-  try { return JSON.stringify(v); } catch { return String(v); }
+function safeStringify(obj, indent) {
+  const seen = new WeakSet();
+  return JSON.stringify(obj, (k, v) => {
+    if (typeof v === 'object' && v !== null) {
+      if (seen.has(v)) return '[Circular]';
+      seen.add(v);
+    }
+    if (typeof v === 'bigint') return v.toString();
+    if (v instanceof Error) return { message: v.message, name: v.name, stack: v.stack };
+    return v;
+  }, indent);
 }
 
 class Logger {
-  constructor(options) {
-    options = options || {};
-    this.name    = options.name  || '';
-    this.level   = LEVELS[options.level] !== undefined ? LEVELS[options.level] : 0;
-    this.json    = options.json  || false;
-    this._file   = options.file  ? fs.createWriteStream(options.file, { flags: 'a' }) : null;
-    this._fields = options.fields || {};
+  constructor(opts) {
+    opts           = opts || {};
+    this._name     = opts.name      || null;
+    this._level    = LEVELS[opts.level] ?? LEVELS.info;
+    this._pretty   = opts.pretty    !== false;
+    this._useColor = opts.color     !== false && process.stdout.isTTY;
+    this._filePath = opts.filePath  || null;
+    this._redact   = opts.redact    || [];
+    this._parent   = opts._parent   || null;
+    this._ctx      = opts.context   || {};
+    this._streams  = [];
+    this._fileStream = null;
+
+    if (this._filePath) {
+      fs.mkdirSync(path.dirname(path.resolve(this._filePath)), { recursive: true });
+      this._fileStream = fs.createWriteStream(this._filePath, { flags: 'a' });
+    }
   }
 
   _write(level, msg, data) {
-    if (LEVELS[level] < this.level) return;
+    if (level < this._level) return;
+    const name_  = levelName(level);
+    const ts     = new Date().toISOString();
+    const merged = Object.assign({}, this._ctx, data || {});
+    if (this._parent) Object.assign(merged, this._parent._ctx);
 
-    if (this.json) {
-      const entry = Object.assign({ time: new Date().toISOString(), level, msg }, this._fields, data || {});
-      const line = JSON.stringify(entry) + '\n';
-      process.stderr.write(line);
-      if (this._file) this._file.write(line);
-      return;
+    if (this._redact.length) {
+      for (const key of this._redact) {
+        delete merged[key];
+        if (merged.err) delete merged.err[key];
+      }
     }
 
-    const LEVEL_ICON  = { debug: 'debug', info: 'info', warn: 'warn', error: 'error', fatal: 'fatal' };
-    const LEVEL_COLOR = { debug: 'dim', info: 'cyan', warn: 'yellow', error: 'red', fatal: 'red' };
-    const badge = col(LEVEL_COLOR[level] || 'dim', LEVEL_ICON[level] || level);
-    const time  = col('dim', shortTime());
-    const name  = this.name ? col('dim', this.name + ':') + ' ' : '';
-    const extra = data && Object.keys(data).length ? ' ' + col('dim', JSON.stringify(data)) : '';
+    if (this._pretty) {
+      const color = this._useColor ? (COLORS[name_] || RESET) : '';
+      const end   = this._useColor ? RESET : '';
+      const gray  = this._useColor ? GRAY  : '';
+      const bold  = this._useColor ? BOLD  : '';
+      const dim   = this._useColor ? DIM   : '';
 
-    const line = `  ${badge} ${name}${msg}${extra}\n`;
-    process.stderr.write(line);
-    if (this._file) this._file.write(line.replace(/\x1b\[[0-9;]*m/g, ''));
+      let line = `${gray}${ts}${end}  ${bold}${color}${name_.toUpperCase().padEnd(5)}${end}`;
+      if (this._name) line += `  ${dim}${this._name}${end}`;
+      if (msg)        line += `  ${msg}`;
+
+      const extra = Object.assign({}, merged);
+      if (extra.err && extra.err.stack) {
+        line += '\n' + gray + extra.err.stack + end;
+        delete extra.err;
+      }
+      const keys = Object.keys(extra);
+      if (keys.length) {
+        if (keys.length <= 3 && keys.every(k => typeof extra[k] !== 'object' || extra[k] === null)) {
+          line += '  ' + gray + keys.map(k => `${k}=${JSON.stringify(extra[k])}`).join(' ') + end;
+        } else {
+          line += '\n' + gray + safeStringify(extra, 2).split('\n').map(l => '  ' + l).join('\n') + end;
+        }
+      }
+
+      process.stdout.write(line + '\n');
+    } else {
+      const log = Object.assign({ time: ts, level: level, name: this._name, msg }, merged);
+      const line = safeStringify(log) + '\n';
+      process.stdout.write(line);
+      if (this._fileStream) this._fileStream.write(line);
+    }
   }
 
-  child(fields) {
+  trace(msg, data)  { this._write(LEVELS.trace, msg, data); }
+  debug(msg, data)  { this._write(LEVELS.debug, msg, data); }
+  info(msg, data)   { this._write(LEVELS.info,  msg, data); }
+  warn(msg, data)   { this._write(LEVELS.warn,  msg, data); }
+  error(msg, data)  { this._write(LEVELS.error, msg, data); }
+  fatal(msg, data)  { this._write(LEVELS.fatal, msg, data); process.nextTick(() => process.exit(1)); }
+
+  log(level, msg, data) {
+    const lvl = typeof level === 'string' ? (LEVELS[level] ?? LEVELS.info) : level;
+    this._write(lvl, msg, data);
+  }
+
+  child(ctx) {
     return new Logger({
-      name:   this.name,
-      level:  Object.keys(LEVELS).find(k => LEVELS[k] === this.level) || 'debug',
-      fields: Object.assign({}, this._fields, fields),
-      file:   this._file ? this._file.path : null,
+      name:     this._name,
+      level:    levelName(this._level),
+      pretty:   this._pretty,
+      color:    this._useColor,
+      filePath: this._filePath,
+      redact:   this._redact,
+      context:  Object.assign({}, this._ctx, ctx),
+      _parent:  this,
     });
   }
 
-  debug(msg, data)  { this._write('debug', msg, data); }
-  info(msg, data)   { this._write('info',  msg, data); }
-  warn(msg, data)   { this._write('warn',  msg, data); }
-  error(msg, data)  { this._write('error', msg, data); }
-  fatal(msg, data)  { this._write('fatal', msg, data); process.exit(1); }
+  withContext(ctx) { return this.child(ctx); }
 
-  time(label) {
-    const t0 = Date.now();
-    return { done: (msg) => this.info((msg || label) + col('gray', ` (${Date.now()-t0}ms)`)) };
+  setLevel(level) {
+    const n = typeof level === 'string' ? LEVELS[level] : level;
+    if (n !== undefined) this._level = n;
+    return this;
+  }
+
+  get level() { return levelName(this._level); }
+
+  addStream(fn) { this._streams.push(fn); return this; }
+
+  startTimer(label) {
+    const start = Date.now();
+    return {
+      done:  (msg, data) => this.info(msg || label, Object.assign({ duration_ms: Date.now() - start }, data)),
+      error: (msg, data) => this.error(msg || label, Object.assign({ duration_ms: Date.now() - start }, data)),
+    };
+  }
+
+  close() {
+    if (this._fileStream) { this._fileStream.end(); this._fileStream = null; }
   }
 }
 
-function createLogger(options) { return new Logger(options); }
+function createLogger(opts) { return new Logger(opts || {}); }
 
-module.exports = { Logger, createLogger };
+const defaultLogger = createLogger({ name: 'app', level: 'info' });
+
+module.exports = { Logger, createLogger, defaultLogger, LEVELS };

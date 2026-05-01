@@ -1,0 +1,40 @@
+# NTL Module Resolver Map
+# Maps ntl:* imports to their actual file paths.
+# The resolver reads this to know which .js or .ntl file to load.
+
+resolver:
+  prefix: "ntl:"
+  alt_prefixes:
+    - "ntl-lang/"
+    - "@ntl-team/ntl-lang/"
+
+module_map:
+  http:       "modules/http"
+  fs:         "modules/fs"
+  crypto:     "modules/crypto"
+  logger:     "modules/logger"
+  test:       "modules/test"
+  ai:         "modules/ai"
+  game:       "modules/game"
+  web:        "modules/web"
+  obf:        "modules/obf"
+  android:    "modules/android"
+  db:         "modules/db"
+  env:        "modules/env"
+  cache:      "modules/cache"
+  ws:         "modules/ws"
+  events:     "modules/events"
+  validate:   "modules/validate"
+  queue:      "modules/queue"
+  mail:       "modules/mail"
+  utils:      "modules/utils"
+  gameengine: "modules/game"
+
+search_order:
+  - core
+  - net
+  - data
+  - tools
+  - ai
+  - mobile
+  - ""

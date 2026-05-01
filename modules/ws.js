@@ -1,373 +1,304 @@
 'use strict';
-// ntl:ws — WebSocket server & client (uses Node.js built-in net/http, no npm deps)
-// Implements RFC 6455 WebSocket protocol natively
 
-const http  = require('http');
-const https = require('https');
-const net   = require('net');
+// ntl:ws — WebSocket server and client with rooms, namespaces, and heartbeat
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
+
+const http   = require('http');
 const crypto = require('crypto');
 const { EventEmitter } = require('./events');
 
-const OPCODE = { CONTINUATION:0, TEXT:1, BINARY:2, CLOSE:8, PING:9, PONG:10 };
-const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
-const READY = { CONNECTING:0, OPEN:1, CLOSING:2, CLOSED:3 };
+const WS_GUID  = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+const OPCODES  = { continuation: 0x0, text: 0x1, binary: 0x2, close: 0x8, ping: 0x9, pong: 0xA };
+const STATE    = { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 };
 
-// ── Frame Parser ─────────────────────────────────────────────────────────────
-
-function parseFrame(buf) {
-  if (buf.length < 2) return null;
-  const byte0 = buf[0], byte1 = buf[1];
-  const fin    = (byte0 & 0x80) !== 0;
-  const opcode = byte0 & 0x0F;
-  const masked = (byte1 & 0x80) !== 0;
-  let payloadLen = byte1 & 0x7F;
-  let offset = 2;
-
-  if (payloadLen === 126) {
-    if (buf.length < 4) return null;
-    payloadLen = buf.readUInt16BE(2); offset = 4;
-  } else if (payloadLen === 127) {
-    if (buf.length < 10) return null;
-    payloadLen = Number(buf.readBigUInt64BE(2)); offset = 10;
-  }
-
-  const maskLen = masked ? 4 : 0;
-  if (buf.length < offset + maskLen + payloadLen) return null;
-
-  let payload = buf.slice(offset + maskLen, offset + maskLen + payloadLen);
-  if (masked) {
-    const mask = buf.slice(offset, offset + 4);
-    payload = Buffer.from(payload);
-    for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i % 4];
-  }
-
-  return { fin, opcode, masked, payload, totalLen: offset + maskLen + payloadLen };
+function acceptKey(key) {
+  return crypto.createHash('sha1').update(key + WS_GUID).digest('base64');
 }
 
-function buildFrame(opcode, data, mask) {
-  const payload = Buffer.isBuffer(data) ? data : Buffer.from(data instanceof ArrayBuffer ? data : String(data));
-  const len = payload.length;
-  let header;
+function encodeFrame(data, opcode, mask) {
+  const isBuf  = Buffer.isBuffer(data);
+  const payload = isBuf ? data : Buffer.from(String(data), 'utf-8');
+  const len    = payload.length;
+  const frame  = [];
 
-  if (len < 126) {
-    header = Buffer.allocUnsafe(2 + (mask ? 4 : 0));
-    header[0] = 0x80 | opcode;
-    header[1] = (mask ? 0x80 : 0) | len;
-  } else if (len < 65536) {
-    header = Buffer.allocUnsafe(4 + (mask ? 4 : 0));
-    header[0] = 0x80 | opcode; header[1] = (mask ? 0x80 : 0) | 126;
-    header.writeUInt16BE(len, 2);
-  } else {
-    header = Buffer.allocUnsafe(10 + (mask ? 4 : 0));
-    header[0] = 0x80 | opcode; header[1] = (mask ? 0x80 : 0) | 127;
-    header.writeBigUInt64BE(BigInt(len), 2);
+  frame.push(0x80 | opcode);
+
+  if (len < 126)       frame.push(mask ? 0x80 | len : len);
+  else if (len < 65536){ frame.push(mask ? 0xFE : 0x7E); frame.push((len >> 8) & 0xFF); frame.push(len & 0xFF); }
+  else {
+    frame.push(mask ? 0xFF : 0x7F);
+    for (let i = 7; i >= 0; i--) frame.push((len / Math.pow(256, i)) & 0xFF);
   }
 
   if (mask) {
-    const m = crypto.randomBytes(4);
-    const maskOffset = header.length - 4;
-    m.copy(header, maskOffset);
-    const masked = Buffer.from(payload);
-    for (let i = 0; i < masked.length; i++) masked[i] ^= m[i % 4];
-    return Buffer.concat([header, masked]);
+    const maskKey = crypto.randomBytes(4);
+    frame.push(...maskKey);
+    const masked = Buffer.alloc(len);
+    for (let i = 0; i < len; i++) masked[i] = payload[i] ^ maskKey[i % 4];
+    return Buffer.concat([Buffer.from(frame), masked]);
   }
 
-  return Buffer.concat([header, payload]);
+  return Buffer.concat([Buffer.from(frame), payload]);
 }
 
-// ── WebSocket Connection ──────────────────────────────────────────────────────
+function decodeFrames(data) {
+  const frames = [];
+  let offset   = 0;
 
-class WebSocket extends EventEmitter {
-  constructor(socket, isServer) {
-    super();
-    this._socket = socket;
-    this._isServer = isServer;
-    this._readyState = READY.OPEN;
-    this._buffer = Buffer.alloc(0);
-    this._fragments = [];
-    this._pingTimer = null;
-    this.id = crypto.randomBytes(8).toString('hex');
+  while (offset < data.length) {
+    if (data.length - offset < 2) break;
+    const b0     = data[offset];
+    const b1     = data[offset + 1];
+    const fin    = !!(b0 & 0x80);
+    const opcode = b0 & 0x0F;
+    const masked = !!(b1 & 0x80);
+    let len      = b1 & 0x7F;
+    offset      += 2;
 
-    socket.on('data', (chunk) => {
-      this._buffer = Buffer.concat([this._buffer, chunk]);
-      this._processFrames();
-    });
+    if (len === 126)      { len = data.readUInt16BE(offset); offset += 2; }
+    else if (len === 127) { len = Number(data.readBigUInt64BE(offset)); offset += 8; }
 
-    socket.on('close', () => {
-      this._readyState = READY.CLOSED;
-      this.emit('close', 1000, 'Connection closed');
-    });
+    let maskKey = null;
+    if (masked) { maskKey = data.slice(offset, offset + 4); offset += 4; }
 
-    socket.on('error', (err) => {
-      this.emit('error', err);
-    });
+    if (data.length - offset < len) break;
+    let payload = data.slice(offset, offset + len);
+    offset += len;
+
+    if (masked && maskKey) {
+      const unmasked = Buffer.alloc(len);
+      for (let i = 0; i < len; i++) unmasked[i] = payload[i] ^ maskKey[i % 4];
+      payload = unmasked;
+    }
+
+    frames.push({ fin, opcode, payload });
   }
 
-  get readyState() { return this._readyState; }
-  get isOpen()     { return this._readyState === READY.OPEN; }
+  return { frames, remaining: data.slice(offset) };
+}
 
-  send(data, options) {
-    if (this._readyState !== READY.OPEN) return false;
-    options = options || {};
-    const isBuffer = Buffer.isBuffer(data) || data instanceof ArrayBuffer;
-    const opcode = options.binary || isBuffer ? OPCODE.BINARY : OPCODE.TEXT;
-    const payload = isBuffer ? (Buffer.isBuffer(data) ? data : Buffer.from(data)) : String(data);
+class WebSocket extends EventEmitter {
+  constructor(socket, opts) {
+    super();
+    this._socket    = socket;
+    this._state     = STATE.OPEN;
+    this._buffer    = Buffer.alloc(0);
+    this._fragments = [];
+    this.id         = crypto.randomUUID();
+    this.rooms      = new Set();
+    this._pingTimer = null;
+    this._metadata  = {};
+
+    socket.on('data', (data) => this._onData(data));
+    socket.on('close', () => { this._state = STATE.CLOSED; this.emit('close'); });
+    socket.on('error', (e) => this.emit('error', e));
+
+    if (opts && opts.heartbeat) {
+      this._pingTimer = setInterval(() => this.ping(), opts.heartbeatInterval || 30000);
+    }
+  }
+
+  get readyState() { return this._state; }
+  get OPEN()       { return STATE.OPEN; }
+  get CLOSED()     { return STATE.CLOSED; }
+
+  send(data, cb) {
+    if (this._state !== STATE.OPEN) { if (cb) cb(new Error('WebSocket is not open')); return; }
+    const opcode = Buffer.isBuffer(data) ? OPCODES.binary : OPCODES.text;
     try {
-      this._socket.write(buildFrame(opcode, payload, !this._isServer));
-      return true;
-    } catch { return false; }
+      this._socket.write(encodeFrame(data, opcode, false), cb);
+    } catch(e) {
+      if (cb) cb(e);
+      else this.emit('error', e);
+    }
+    return this;
   }
 
   sendJSON(data) { return this.send(JSON.stringify(data)); }
-  sendBinary(buf){ return this.send(buf, { binary: true }); }
 
   ping(data) {
-    if (this._readyState !== READY.OPEN) return;
-    this._socket.write(buildFrame(OPCODE.PING, data || ''));
+    if (this._state !== STATE.OPEN) return;
+    try { this._socket.write(encodeFrame(data || '', OPCODES.ping, false)); } catch(_) {}
   }
 
   close(code, reason) {
-    if (this._readyState !== READY.OPEN) return;
-    this._readyState = READY.CLOSING;
-    const codeBuf = Buffer.allocUnsafe(2);
-    codeBuf.writeUInt16BE(code || 1000, 0);
-    const reasonBuf = reason ? Buffer.from(reason) : Buffer.alloc(0);
-    this._socket.write(buildFrame(OPCODE.CLOSE, Buffer.concat([codeBuf, reasonBuf])));
-    this._socket.end();
+    if (this._state !== STATE.OPEN) return;
+    this._state = STATE.CLOSING;
+    const payload = Buffer.alloc(2);
+    payload.writeUInt16BE(code || 1000);
+    const reasonBuf = reason ? Buffer.from(reason, 'utf-8') : Buffer.alloc(0);
+    try { this._socket.write(encodeFrame(Buffer.concat([payload, reasonBuf]), OPCODES.close, false)); }
+    catch(_) {}
+    setTimeout(() => { try { this._socket.destroy(); } catch(_) {} }, 100);
   }
 
-  _processFrames() {
-    while (this._buffer.length >= 2) {
-      const frame = parseFrame(this._buffer);
-      if (!frame) break;
-      this._buffer = this._buffer.slice(frame.totalLen);
+  terminate() {
+    this._state = STATE.CLOSED;
+    if (this._pingTimer) clearInterval(this._pingTimer);
+    try { this._socket.destroy(); } catch(_) {}
+  }
 
+  set(key, value) { this._metadata[key] = value; return this; }
+  get(key)        { return this._metadata[key]; }
+  data(obj)       { Object.assign(this._metadata, obj); return this; }
+
+  _onData(data) {
+    this._buffer = Buffer.concat([this._buffer, data]);
+    const { frames, remaining } = decodeFrames(this._buffer);
+    this._buffer = remaining;
+
+    for (const frame of frames) {
       switch (frame.opcode) {
-        case OPCODE.TEXT:
-        case OPCODE.BINARY:
-        case OPCODE.CONTINUATION:
-          if (frame.opcode !== OPCODE.CONTINUATION) {
-            this._fragments = [{ opcode: frame.opcode, payload: frame.payload }];
+        case OPCODES.text:
+        case OPCODES.binary:
+          if (frame.fin && this._fragments.length === 0) {
+            const msg = frame.opcode === OPCODES.text ? frame.payload.toString('utf-8') : frame.payload;
+            this.emit('message', msg, frame.opcode === OPCODES.binary);
           } else {
-            this._fragments.push({ opcode: frame.opcode, payload: frame.payload });
-          }
-          if (frame.fin) {
-            const full = Buffer.concat(this._fragments.map(f => f.payload));
-            const isText = this._fragments[0].opcode === OPCODE.TEXT;
-            this._fragments = [];
-            if (isText) {
-              const msg = full.toString('utf8');
-              let parsed = msg;
-              try { parsed = JSON.parse(msg); } catch {}
-              this.emit('message', parsed, msg, false);
-            } else {
-              this.emit('message', full, full, true);
+            this._fragments.push(frame.payload);
+            if (frame.fin) {
+              const full = Buffer.concat(this._fragments);
+              this._fragments = [];
+              this.emit('message', frame.opcode === OPCODES.text ? full.toString('utf-8') : full, frame.opcode === OPCODES.binary);
             }
           }
           break;
-        case OPCODE.PING:
-          this._socket.write(buildFrame(OPCODE.PONG, frame.payload));
+        case OPCODES.ping:
+          try { this._socket.write(encodeFrame(frame.payload, OPCODES.pong, false)); } catch(_) {}
           this.emit('ping', frame.payload);
           break;
-        case OPCODE.PONG:
+        case OPCODES.pong:
           this.emit('pong', frame.payload);
           break;
-        case OPCODE.CLOSE:
-          const code = frame.payload.length >= 2 ? frame.payload.readUInt16BE(0) : 1000;
-          const reason = frame.payload.length > 2 ? frame.payload.slice(2).toString() : '';
-          if (this._readyState === READY.OPEN) this.close(code, reason);
-          this._readyState = READY.CLOSED;
+        case OPCODES.close: {
+          const code   = frame.payload.length >= 2 ? frame.payload.readUInt16BE(0) : 1000;
+          const reason = frame.payload.length > 2  ? frame.payload.slice(2).toString('utf-8') : '';
+          this._state = STATE.CLOSING;
+          try { this._socket.write(encodeFrame(frame.payload.slice(0, 2), OPCODES.close, false)); } catch(_) {}
+          setTimeout(() => { this._socket.destroy(); }, 10);
           this.emit('close', code, reason);
           break;
+        }
       }
     }
   }
-
-  startHeartbeat(intervalMs, timeoutMs) {
-    intervalMs = intervalMs || 30000;
-    timeoutMs = timeoutMs || 10000;
-    let pongTimeout;
-    this._pingTimer = setInterval(() => {
-      if (!this.isOpen) { clearInterval(this._pingTimer); return; }
-      this.ping();
-      pongTimeout = setTimeout(() => {
-        if (this.isOpen) { this.close(1001, 'Ping timeout'); }
-      }, timeoutMs);
-    }, intervalMs);
-    this.on('pong', () => { if (pongTimeout) clearTimeout(pongTimeout); });
-    return this;
-  }
 }
 
-// ── WebSocket Server ──────────────────────────────────────────────────────────
-
 class WebSocketServer extends EventEmitter {
-  constructor(options) {
+  constructor(opts) {
     super();
-    options = options || {};
-    this._clients = new Map();
-    this._rooms = new Map();
-    this._path = options.path || '/';
-    this._onUpgrade = null;
+    opts          = opts || {};
+    this.clients  = new Set();
+    this._rooms   = new Map();
+    this._server  = opts.server;
+    this._noServer = opts.noServer || false;
+    this._opts    = opts;
+
+    if (this._server) {
+      this._server.on('upgrade', (req, socket, head) => this._handleUpgrade(req, socket, head));
+    } else if (!this._noServer) {
+      this._httpServer = http.createServer();
+      this._httpServer.on('upgrade', (req, socket, head) => this._handleUpgrade(req, socket, head));
+    }
   }
 
-  handleUpgrade(req, socket, head, callback) {
+  handleUpgrade(req, socket, head) { this._handleUpgrade(req, socket, head); }
+
+  _handleUpgrade(req, socket, head) {
     const key = req.headers['sec-websocket-key'];
-    if (!key || req.headers['upgrade'] !== 'websocket') {
-      socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-    const accept = crypto.createHash('sha1').update(key + WS_GUID).digest('base64');
-    const protocol = req.headers['sec-websocket-protocol'] || '';
+    if (!key) { socket.destroy(); return; }
+
+    const accept  = acceptKey(key);
     const headers = [
       'HTTP/1.1 101 Switching Protocols',
       'Upgrade: websocket',
       'Connection: Upgrade',
       `Sec-WebSocket-Accept: ${accept}`,
-      ...(protocol ? [`Sec-WebSocket-Protocol: ${protocol.split(',')[0].trim()}`] : []),
-      '', ''
-    ].join('\r\n');
+    ];
 
-    socket.write(headers);
-    const ws = new WebSocket(socket, true);
-    ws._req = req;
-    ws.ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-    ws.path = req.url;
-    ws.query = new URLSearchParams(req.url.split('?')[1] || '').entries()
-      ? Object.fromEntries(new URLSearchParams(req.url.split('?')[1] || '')) : {};
+    if (req.headers['sec-websocket-protocol']) {
+      const protocols  = req.headers['sec-websocket-protocol'].split(',').map(s => s.trim());
+      const selected   = this._opts.handleProtocols ? this._opts.handleProtocols(protocols, req) : protocols[0];
+      if (selected) headers.push(`Sec-WebSocket-Protocol: ${selected}`);
+    }
 
-    this._clients.set(ws.id, ws);
+    socket.write(headers.join('\r\n') + '\r\n\r\n');
+
+    const ws = new WebSocket(socket, this._opts);
+    ws.req   = req;
+    ws.url   = req.url;
+    ws.ip    = req.socket?.remoteAddress || req.headers['x-forwarded-for'] || '::1';
+
+    this.clients.add(ws);
     ws.on('close', () => {
-      this._clients.delete(ws.id);
-      for (const room of this._rooms.values()) room.delete(ws.id);
-      this.emit('disconnect', ws);
+      this.clients.delete(ws);
+      for (const room of ws.rooms) this._leaveRoom(ws, room);
     });
 
-    if (callback) callback(ws, req);
     this.emit('connection', ws, req);
   }
 
-  attach(server) {
-    server.on('upgrade', (req, socket, head) => {
-      const url = req.url.split('?')[0];
-      if (this._path !== '/' && url !== this._path) {
-        socket.destroy(); return;
-      }
-      this.handleUpgrade(req, socket, head);
-    });
-    return this;
+  listen(port, host, cb) {
+    if (typeof host === 'function') { cb = host; host = '0.0.0.0'; }
+    if (!this._httpServer) this._httpServer = http.createServer();
+    this._httpServer.on('upgrade', (req, socket, head) => this._handleUpgrade(req, socket, head));
+    this._httpServer.listen(port, host || '0.0.0.0', cb || (() => {}));
+    return this._httpServer;
   }
 
-  broadcast(data, exclude) {
-    for (const [id, ws] of this._clients) {
-      if (exclude && (id === exclude || (exclude.id && id === exclude.id))) continue;
-      ws.send(data);
+  close(cb) {
+    this.clients.forEach(c => c.terminate());
+    if (this._httpServer) this._httpServer.close(cb);
+    else if (cb) cb();
+  }
+
+  broadcast(data, filter) {
+    for (const client of this.clients) {
+      if (client.readyState === STATE.OPEN) {
+        if (!filter || filter(client)) client.send(data);
+      }
     }
   }
 
-  broadcastJSON(data, exclude) {
-    this.broadcast(JSON.stringify(data), exclude);
+  broadcastJSON(data, filter) {
+    const str = JSON.stringify(data);
+    for (const client of this.clients) {
+      if (client.readyState === STATE.OPEN) {
+        if (!filter || filter(client)) client.send(str);
+      }
+    }
   }
 
   join(ws, room) {
+    ws.rooms.add(room);
     if (!this._rooms.has(room)) this._rooms.set(room, new Set());
-    this._rooms.get(room).add(ws.id);
-    return this;
+    this._rooms.get(room).add(ws);
   }
 
-  leave(ws, room) {
+  leave(ws, room)    { this._leaveRoom(ws, room); }
+  _leaveRoom(ws, room) {
+    ws.rooms.delete(room);
     const r = this._rooms.get(room);
-    if (r) r.delete(ws.id);
-    return this;
+    if (r) { r.delete(ws); if (!r.size) this._rooms.delete(room); }
   }
 
   to(room) {
-    const ids = this._rooms.get(room) || new Set();
-    const clients = [...ids].map(id => this._clients.get(id)).filter(Boolean);
+    const clients = this._rooms.get(room) || new Set();
     return {
-      send: (data) => clients.forEach(ws => ws.send(data)),
-      sendJSON: (data) => clients.forEach(ws => ws.sendJSON(data)),
-      emit: (event, data) => clients.forEach(ws => ws.sendJSON({ event, data })),
-      size: clients.length
+      emit:      (data) => { for (const c of clients) if (c.readyState === STATE.OPEN) c.send(data); },
+      emitJSON:  (data) => { const str = JSON.stringify(data); for (const c of clients) if (c.readyState === STATE.OPEN) c.send(str); },
+      clients:   () => [...clients],
+      size:      () => clients.size,
     };
   }
 
-  get size()    { return this._clients.size; }
-  get clients() { return [...this._clients.values()]; }
-
-  get(id) { return this._clients.get(id) || null; }
+  rooms()  { return [...this._rooms.keys()]; }
+  roomOf(name) { return this._rooms.get(name) || new Set(); }
 }
 
-// ── WebSocket Client ──────────────────────────────────────────────────────────
+function createServer(opts) { return new WebSocketServer(opts || {}); }
 
-class WebSocketClient extends EventEmitter {
-  constructor(url, options) {
-    super();
-    options = options || {};
-    this._url = url;
-    this._options = options;
-    this._ws = null;
-    this._reconnect = options.reconnect !== false;
-    this._reconnectDelay = options.reconnectDelay || 2000;
-    this._reconnectAttempts = 0;
-    this._maxReconnectAttempts = options.maxReconnectAttempts || 10;
-    this._connecting = false;
-  }
-
-  connect() {
-    if (this._connecting || (this._ws && this._ws.isOpen)) return this;
-    this._connecting = true;
-    const url = new URL(this._url);
-    const isSecure = url.protocol === 'wss:';
-    const port = url.port || (isSecure ? 443 : 80);
-    const key = crypto.randomBytes(16).toString('base64');
-
-    const options = {
-      hostname: url.hostname, port: parseInt(port),
-      path: url.pathname + url.search,
-      headers: Object.assign({
-        'Upgrade': 'websocket', 'Connection': 'Upgrade',
-        'Sec-WebSocket-Key': key, 'Sec-WebSocket-Version': '13',
-        'Host': url.host
-      }, this._options.headers || {})
-    };
-
-    const transport = isSecure ? https : http;
-    const req = transport.request(options);
-    req.on('upgrade', (res, socket) => {
-      this._connecting = false;
-      this._reconnectAttempts = 0;
-      this._ws = new WebSocket(socket, false);
-      this._ws.on('message', (...args) => this.emit('message', ...args));
-      this._ws.on('close', (code, reason) => {
-        this.emit('close', code, reason);
-        if (this._reconnect && this._reconnectAttempts < this._maxReconnectAttempts) {
-          this._reconnectAttempts++;
-          setTimeout(() => this.connect(), this._reconnectDelay * this._reconnectAttempts);
-        }
-      });
-      this._ws.on('error', (err) => this.emit('error', err));
-      this._ws.on('ping', () => this.emit('ping'));
-      this._ws.on('pong', () => this.emit('pong'));
-      this.emit('open');
-    });
-    req.on('error', (err) => {
-      this._connecting = false;
-      this.emit('error', err);
-      if (this._reconnect && this._reconnectAttempts < this._maxReconnectAttempts) {
-        this._reconnectAttempts++;
-        setTimeout(() => this.connect(), this._reconnectDelay * this._reconnectAttempts);
-      }
-    });
-    req.end();
-    return this;
-  }
-
-  send(data)     { return this._ws ? this._ws.send(data) : false; }
-  sendJSON(data) { return this._ws ? this._ws.sendJSON(data) : false; }
-  close(code, reason) { if (this._ws) { this._reconnect = false; this._ws.close(code, reason); } }
-  get isOpen()   { return this._ws ? this._ws.isOpen : false; }
-}
-
-module.exports = { WebSocket, WebSocketServer, WebSocketClient, READY, OPCODE };
+module.exports = {
+  WebSocket, WebSocketServer, createServer,
+  OPEN: STATE.OPEN, CLOSED: STATE.CLOSED, CONNECTING: STATE.CONNECTING, CLOSING: STATE.CLOSING,
+};

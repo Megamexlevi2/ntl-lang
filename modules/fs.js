@@ -1,213 +1,259 @@
-// Created by David Dev
-// GitHub: https://github.com/Megamexlevi2/ntl-lang
-// © David Dev 2026. All rights reserved.
-
 'use strict';
-const nodeFs   = require('fs');
-const nodePath = require('path');
-function read(filePath, encoding) {
-  return nodeFs.readFileSync(filePath, encoding || 'utf8');
-}
-function readAsync(filePath, encoding) {
-  return nodeFs.promises.readFile(filePath, encoding || 'utf8');
-}
-function write(filePath, data, options) {
-  options = options || {};
-  const dir = nodePath.dirname(filePath);
-  if (!nodeFs.existsSync(dir)) nodeFs.mkdirSync(dir, { recursive: true });
-  nodeFs.writeFileSync(filePath, data, options);
-  return true;
-}
-function writeAsync(filePath, data, options) {
-  return nodeFs.promises.writeFile(filePath, data, options || {});
-}
-function append(filePath, data) {
-  nodeFs.appendFileSync(filePath, data, 'utf8');
-  return true;
-}
-function exists(filePath) {
-  return nodeFs.existsSync(filePath);
-}
-function remove(filePath) {
-  if (!nodeFs.existsSync(filePath)) return false;
-  const stat = nodeFs.statSync(filePath);
-  if (stat.isDirectory()) {
-    nodeFs.rmSync(filePath, { recursive: true, force: true });
-  } else {
-    nodeFs.unlinkSync(filePath);
-  }
-  return true;
-}
-function move(src, dest) {
-  const destDir = nodePath.dirname(dest);
-  if (!nodeFs.existsSync(destDir)) nodeFs.mkdirSync(destDir, { recursive: true });
-  nodeFs.renameSync(src, dest);
-  return true;
-}
-function copy(src, dest) {
-  const destDir = nodePath.dirname(dest);
-  if (!nodeFs.existsSync(destDir)) nodeFs.mkdirSync(destDir, { recursive: true });
-  nodeFs.copyFileSync(src, dest);
-  return true;
-}
-function mkdir(dirPath, recursive) {
-  if (!nodeFs.existsSync(dirPath)) {
-    nodeFs.mkdirSync(dirPath, { recursive: recursive !== false });
-  }
-  return true;
-}
-function list(dirPath, options) {
-  options = options || {};
-  if (!nodeFs.existsSync(dirPath)) return [];
-  const entries = nodeFs.readdirSync(dirPath, { withFileTypes: true });
-  if (options.filesOnly) return entries.filter(e => e.isFile()).map(e => e.name);
-  if (options.dirsOnly)  return entries.filter(e => e.isDirectory()).map(e => e.name);
-  return entries.map(e => e.name);
-}
-function listFull(dirPath, options) {
-  return list(dirPath, options).map(n => nodePath.join(dirPath, n));
-}
-function stat(filePath) {
-  if (!nodeFs.existsSync(filePath)) return null;
-  const s = nodeFs.statSync(filePath);
-  return {
-    size: s.size,
-    isFile: s.isFile(),
-    isDirectory: s.isDirectory(),
-    created: s.birthtime,
-    modified: s.mtime,
-    accessed: s.atime,
-    mode: s.mode
-  };
-}
-function walk(dirPath, fn) {
-  const entries = nodeFs.readdirSync(dirPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const full = nodePath.join(dirPath, entry.name);
-    fn(full, entry);
-    if (entry.isDirectory()) walk(full, fn);
-  }
-}
-function glob(pattern, baseDir) {
-  baseDir = baseDir || process.cwd();
-  const results = [];
-  const regex = new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*') + '$');
-  walk(baseDir, (full) => {
-    const rel = nodePath.relative(baseDir, full).replace(/\\/g, '/');
-    if (regex.test(rel)) results.push(full);
-  });
-  return results;
-}
-function readJson(filePath) {
-  return JSON.parse(read(filePath));
-}
-function writeJson(filePath, data, pretty) {
-  const json = pretty !== false ? JSON.stringify(data, null, 2) : JSON.stringify(data);
-  return write(filePath, json + '\n');
-}
-function readLines(filePath) {
-  return read(filePath).split('\n');
-}
-function touch(filePath) {
-  const now = new Date();
-  if (nodeFs.existsSync(filePath)) {
-    nodeFs.utimesSync(filePath, now, now);
-  } else {
-    write(filePath, '');
-  }
-  return true;
-}
-function extension(filePath) {
-  return nodePath.extname(filePath).slice(1);
-}
-function basename(filePath, ext) {
-  return nodePath.basename(filePath, ext);
-}
-function dirname(filePath) {
-  return nodePath.dirname(filePath);
-}
-function join(...parts) {
-  return nodePath.join(...parts);
-}
-function resolve(...parts) {
-  return nodePath.resolve(...parts);
-}
-function relative(from, to) {
-  return nodePath.relative(from, to);
-}
-function isAbsolute(filePath) {
-  return nodePath.isAbsolute(filePath);
-}
-function tmpDir() {
-  return require('os').tmpdir();
-}
-function tmpFile(prefix, ext) {
-  prefix = prefix || 'ntl_';
-  ext = ext || '.tmp';
-  const id = Math.random().toString(36).slice(2, 10);
-  return nodePath.join(tmpDir(), `${prefix}${id}${ext}`);
-}
-function watch(filePath, fn, options) {
-  options = options || {};
-  return nodeFs.watch(filePath, options, fn);
-}
-function watchDir(dir, fn, options) {
-  options = Object.assign({ recursive: true }, options || {});
-  return nodeFs.watch(dir, options, fn);
+
+// ntl:fs — file system utilities (async + sync, glob, watch, temp files)
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
+
+const fs      = require('fs');
+const fsP     = require('fs').promises;
+const path    = require('path');
+const os      = require('os');
+const crypto  = require('crypto');
+const { EventEmitter } = require('./events');
+
+// ─── Core helpers ─────────────────────────────────────────────────────────────
+
+async function read(filePath, opts) {
+  opts = opts || {};
+  const encoding = opts.encoding || opts.enc || (opts.binary ? null : 'utf-8');
+  return fsP.readFile(filePath, encoding);
 }
 
-// Aliases for common patterns
-function readText(p, enc) { return read(p, enc); }
-function writeText(p, data, enc) { return write(p, data, enc); }
-function readJSON(p) {
-  try { return JSON.parse(read(p, 'utf-8')); }
-  catch(e) { throw new Error('[ntl:fs] readJSON failed: ' + e.message); }
+function readSync(filePath, opts) {
+  opts = opts || {};
+  const encoding = opts.encoding || opts.enc || (opts.binary ? null : 'utf-8');
+  return fs.readFileSync(filePath, encoding);
 }
-function writeJSON(p, data, pretty) {
-  write(p, JSON.stringify(data, null, pretty !== false ? 2 : 0), 'utf-8');
+
+async function write(filePath, data, opts) {
+  opts = opts || {};
+  if (opts.mkdirp !== false) fs.mkdirSync(path.dirname(path.resolve(filePath)), { recursive: true });
+  const mode    = opts.mode  || undefined;
+  const flag    = opts.flag  || opts.append ? 'a' : 'w';
+  const encoding = opts.encoding || (Buffer.isBuffer(data) ? undefined : 'utf-8');
+  await fsP.writeFile(filePath, data, { encoding, mode, flag });
 }
-function lines(p) {
-  return (read(p, 'utf-8') || '').split('\n').filter(l => l.length > 0);
+
+function writeSync(filePath, data, opts) {
+  opts = opts || {};
+  if (opts.mkdirp !== false) fs.mkdirSync(path.dirname(path.resolve(filePath)), { recursive: true });
+  const flag = opts.append ? 'a' : 'w';
+  fs.writeFileSync(filePath, data, { encoding: Buffer.isBuffer(data) ? undefined : 'utf-8', flag });
 }
-function tree(dir, depth, _cur) {
-  _cur = _cur || 0; depth = depth || 3;
-  if (_cur > depth) return [];
-  const nodeFs = require('fs');
-  const nodePath = require('path');
-  const entries = [];
-  try {
-    for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
-      entries.push({ name: entry.name, path: nodePath.join(dir, entry.name), isDir: entry.isDirectory() });
-      if (entry.isDirectory()) {
-        entries.push(...tree(nodePath.join(dir, entry.name), depth, _cur + 1));
-      }
-    }
-  } catch {}
+
+async function append(filePath, data, opts) { return write(filePath, data, Object.assign({}, opts, { append: true })); }
+function appendSync(filePath, data, opts)   { writeSync(filePath, data, Object.assign({}, opts, { append: true })); }
+
+async function readJSON(filePath) {
+  const text = await read(filePath);
+  return JSON.parse(text);
+}
+
+function readJSONSync(filePath) { return JSON.parse(readSync(filePath)); }
+
+async function writeJSON(filePath, data, opts) {
+  opts = opts || {};
+  const indent = opts.indent !== undefined ? opts.indent : 2;
+  return write(filePath, JSON.stringify(data, null, indent) + '\n', opts);
+}
+
+function writeJSONSync(filePath, data, opts) {
+  opts = opts || {};
+  writeSync(filePath, JSON.stringify(data, null, opts.indent !== undefined ? opts.indent : 2) + '\n', opts);
+}
+
+async function readLines(filePath, opts) {
+  const text = await read(filePath, opts);
+  return text.split('\n');
+}
+
+async function exists(filePath) {
+  try { await fsP.access(filePath); return true; }
+  catch(_) { return false; }
+}
+
+function existsSync(filePath) { return fs.existsSync(filePath); }
+
+async function stat(filePath) { return fsP.stat(filePath); }
+function statSync(filePath)   { return fs.statSync(filePath); }
+
+async function isFile(filePath)      { try { return (await fsP.stat(filePath)).isFile(); }      catch(_) { return false; } }
+async function isDirectory(filePath) { try { return (await fsP.stat(filePath)).isDirectory(); } catch(_) { return false; } }
+function isFileSync(filePath)        { try { return fs.statSync(filePath).isFile(); }      catch(_) { return false; } }
+function isDirSync(filePath)         { try { return fs.statSync(filePath).isDirectory(); } catch(_) { return false; } }
+
+async function size(filePath)  { return (await fsP.stat(filePath)).size; }
+
+async function copy(src, dest, opts) {
+  opts = opts || {};
+  if (opts.mkdirp !== false) fs.mkdirSync(path.dirname(path.resolve(dest)), { recursive: true });
+  const flags = opts.overwrite === false ? fs.constants.COPYFILE_EXCL : 0;
+  return fsP.copyFile(src, dest, flags);
+}
+
+async function move(src, dest, opts) {
+  opts = opts || {};
+  if (opts.mkdirp !== false) fs.mkdirSync(path.dirname(path.resolve(dest)), { recursive: true });
+  try { await fsP.rename(src, dest); }
+  catch(_) { await copy(src, dest, opts); await remove(src); }
+}
+
+async function remove(filePath) {
+  const s = await fsP.stat(filePath).catch(() => null);
+  if (!s) return;
+  if (s.isDirectory()) await fsP.rm(filePath, { recursive: true, force: true });
+  else await fsP.unlink(filePath);
+}
+
+function removeSync(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const s = fs.statSync(filePath);
+  if (s.isDirectory()) fs.rmSync(filePath, { recursive: true, force: true });
+  else fs.unlinkSync(filePath);
+}
+
+async function mkdir(dirPath, opts) {
+  await fsP.mkdir(dirPath, { recursive: (opts && opts.recursive) !== false });
+}
+
+function mkdirSync(dirPath, opts) {
+  fs.mkdirSync(dirPath, { recursive: (opts && opts.recursive) !== false });
+}
+
+async function readdir(dirPath, opts) {
+  opts = opts || {};
+  const entries = await fsP.readdir(dirPath, { withFileTypes: opts.withTypes });
+  if (opts.withTypes) return entries;
   return entries;
 }
-function copyDir(src, dst) {
-  const nodeFs = require('fs');
-  const nodePath = require('path');
-  nodeFs.mkdirSync(dst, { recursive: true });
-  for (const entry of nodeFs.readdirSync(src, { withFileTypes: true })) {
-    const s = nodePath.join(src, entry.name);
-    const d = nodePath.join(dst, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
-    else nodeFs.copyFileSync(s, d);
-  }
+
+function readdirSync(dirPath, opts) {
+  return fs.readdirSync(dirPath, opts || {});
 }
 
+async function ls(dirPath, opts) {
+  opts = opts || {};
+  const entries = await fsP.readdir(dirPath, { withFileTypes: true });
+  return entries.map(e => ({
+    name:  e.name,
+    path:  path.join(dirPath, e.name),
+    isFile: e.isFile(),
+    isDir:  e.isDirectory(),
+    isSymlink: e.isSymbolicLink(),
+  }));
+}
+
+// ─── Glob (no external deps) ──────────────────────────────────────────────────
+
+function matchGlob(pattern, filePath) {
+  const regexStr = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\\\*\\\*/g, '%%DOUBLESTAR%%')
+    .replace(/\*/g, '[^/]*')
+    .replace(/%%DOUBLESTAR%%\//g, '(?:[^/]+/)*')
+    .replace(/%%DOUBLESTAR%%/g, '.*')
+    .replace(/\?/g, '[^/]');
+  return new RegExp(`^${regexStr}$`).test(filePath);
+}
+
+async function glob(pattern, opts) {
+  opts = opts || {};
+  const cwd     = opts.cwd || process.cwd();
+  const results = [];
+  const ignore  = opts.ignore || [];
+
+  async function walk(dir, rel) {
+    let entries;
+    try { entries = await fsP.readdir(dir, { withFileTypes: true }); }
+    catch(_) { return; }
+
+    for (const entry of entries) {
+      const entryRel = rel ? `${rel}/${entry.name}` : entry.name;
+      const entryAbs = path.join(dir, entry.name);
+
+      if (ignore.some(p => matchGlob(p, entryRel) || entryRel.includes(p))) continue;
+      if (entry.name === 'node_modules' && !pattern.includes('node_modules')) continue;
+      if (entry.name.startsWith('.') && !opts.dot) continue;
+
+      if (entry.isDirectory()) {
+        await walk(entryAbs, entryRel);
+      } else if (matchGlob(pattern, entryRel)) {
+        results.push(opts.absolute ? entryAbs : entryRel);
+      }
+    }
+  }
+
+  await walk(cwd, '');
+  return results;
+}
+
+// ─── Temp files ───────────────────────────────────────────────────────────────
+
+function tmpPath(opts) {
+  opts = opts || {};
+  const ext    = opts.ext    || opts.extension || '';
+  const prefix = opts.prefix || 'ntl_';
+  const dir    = opts.dir    || os.tmpdir();
+  return path.join(dir, `${prefix}${crypto.randomBytes(8).toString('hex')}${ext}`);
+}
+
+async function tmpFile(content, opts) {
+  const p = tmpPath(opts);
+  await write(p, content || '');
+  return p;
+}
+
+async function tmpDir(opts) {
+  const p = tmpPath(Object.assign({}, opts, { ext: '' }));
+  await mkdir(p);
+  return p;
+}
+
+// ─── Watcher ─────────────────────────────────────────────────────────────────
+
+function watch(target, opts) {
+  opts = opts || {};
+  const emitter  = new EventEmitter();
+  const watchers = [];
+
+  const watcher = fs.watch(target, { recursive: opts.recursive !== false }, (eventType, filename) => {
+    emitter.emit('change', { event: eventType, file: filename, path: path.join(target, filename || '') });
+  });
+  watchers.push(watcher);
+
+  watcher.on('error', (e) => emitter.emit('error', e));
+
+  return {
+    on:    (...args) => emitter.on(...args),
+    off:   (...args) => emitter.off(...args),
+    close: ()        => { watchers.forEach(w => w.close()); emitter.emit('close'); },
+  };
+}
+
+// ─── Path utilities ───────────────────────────────────────────────────────────
+
+const pathUtils = {
+  join:      (...args) => path.join(...args),
+  resolve:   (...args) => path.resolve(...args),
+  relative:  (from, to) => path.relative(from, to),
+  dirname:   (p) => path.dirname(p),
+  basename:  (p, ext) => path.basename(p, ext),
+  extname:   (p) => path.extname(p),
+  parse:     (p) => path.parse(p),
+  normalize: (p) => path.normalize(p),
+  isAbsolute:(p) => path.isAbsolute(p),
+  sep:       path.sep,
+  delimiter: path.delimiter,
+};
+
 module.exports = {
-  read, readAsync, write, writeAsync, append,
-  exists, remove, move, copy, mkdir,
-  list, listFull, stat,
-  walk, glob,
-  readJson, writeJson, readLines,
-  touch, extension, basename, dirname, join, resolve, relative, isAbsolute,
-  tmpDir, tmpFile,
-  watch, watchDir,
-  sep: nodePath.sep,
-  cwd: () => process.cwd(),
-  home: () => require('os').homedir(),
-  readText, writeText, readJSON, writeJSON, lines, tree, copyDir
+  read, readSync, write, writeSync,
+  append, appendSync,
+  readJSON, readJSONSync, writeJSON, writeJSONSync,
+  readLines, readdir, readdirSync, ls,
+  exists, existsSync, stat, statSync,
+  isFile, isFileSync, isDirectory, isDirSync,
+  size, copy, move, remove, removeSync,
+  mkdir, mkdirSync, glob, matchGlob,
+  tmpPath, tmpFile, tmpDir,
+  watch, path: pathUtils,
 };

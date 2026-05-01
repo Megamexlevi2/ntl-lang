@@ -1,0 +1,64 @@
+# NTL Lint Rules
+# Controls what the compiler warns about during type-checking and validation.
+# Set a rule to false to silence it. Set strict: true in ntl.yaml to enable all rules.
+
+rules:
+  unused_variables:
+    enabled: true
+    severity: warn
+    message: "Variable declared but never used"
+
+  unused_imports:
+    enabled: true
+    severity: warn
+    message: "Import is never used"
+
+  val_reassign:
+    enabled: true
+    severity: error
+    message: "Cannot reassign a val binding — use var if you need mutation"
+
+  implicit_any:
+    enabled: false
+    severity: warn
+    message: "Value has an implicit 'any' type — add a type annotation"
+
+  null_deref:
+    enabled: true
+    severity: warn
+    message: "This value might be null or undefined — guard it first"
+
+  missing_return:
+    enabled: true
+    severity: warn
+    message: "Function may not return a value in all code paths"
+
+  unreachable_code:
+    enabled: true
+    severity: warn
+    message: "Code after return/break/continue will never run"
+
+  empty_catch:
+    enabled: true
+    severity: warn
+    message: "Empty catch block — errors are swallowed silently"
+
+  const_condition:
+    enabled: false
+    severity: warn
+    message: "Condition is always true or always false"
+
+  type_mismatch:
+    enabled: true
+    severity: error
+    message: "Type mismatch — value does not match the declared type"
+
+  shadow:
+    enabled: false
+    severity: warn
+    message: "Variable shadows an outer variable with the same name"
+
+  prefer_val:
+    enabled: false
+    severity: warn
+    message: "This var is never reassigned — consider using val"

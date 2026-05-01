@@ -1,0 +1,43 @@
+# NTL Compilation Targets
+# Each target controls how the output JavaScript is formatted.
+# Use --target=<name> to select one, or set it in ntl.yaml.
+
+targets:
+  node:
+    cjs: true
+    esm: false
+    description: "CommonJS output for Node.js — the default"
+    use_case: "Servers, scripts, CLI tools, anything running on Node"
+    default: true
+
+  browser:
+    cjs: false
+    esm: true
+    description: "ES module output for browsers"
+    use_case: "Frontend code that runs in the browser via <script type=module>"
+
+  deno:
+    cjs: false
+    esm: true
+    description: "ES module output compatible with Deno"
+    use_case: "Deno scripts and modules"
+
+  bun:
+    cjs: false
+    esm: false
+    description: "Output tuned for the Bun runtime"
+    use_case: "Bun apps that want native Bun APIs"
+
+  esm:
+    cjs: false
+    esm: true
+    description: "Generic ES modules output"
+    use_case: "Any ESM-compatible environment"
+
+  cjs:
+    cjs: true
+    esm: false
+    description: "Explicit CommonJS — same as node but named for clarity"
+    use_case: "Libraries that need to work in both old and new Node.js"
+
+default_target: node

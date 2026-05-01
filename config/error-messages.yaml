@@ -1,0 +1,67 @@
+# NTL Error Message Definitions
+# The error formatter reads this to produce clear diagnostic output.
+
+phases:
+  lex:     "error[lex]"
+  parse:   "error[parse]"
+  compile: "error[compile]"
+  type:    "error[type]"
+  runtime: "error"
+  scope:   "error[scope]"
+  module:  "error[module]"
+
+codes:
+  UNDEF_VAR:
+    message: "'{name}' is not declared"
+    note: "'{name}' is not in scope here"
+    help:
+      - "Declare it first:  val {name} = <value>"
+      - "Or pass it as a parameter to the function that needs it"
+    example_bad:  "log unknownVar"
+    example_good: "val unknownVar = 42\nlog unknownVar"
+
+  UNDEF_FUNC:
+    message: "'{name}' is not defined"
+    note: "'{name}' is not defined — declare it or import it before calling"
+    help:
+      - "Define the function:  fn {name}() { ... }"
+      - "Or import it:  val { {name} } = require('./module')"
+
+  CONST_REASSIGN:
+    message: "Cannot reassign val binding '{name}'"
+    note: "'{name}' was declared with val, which is immutable"
+    help:
+      - "Use var instead of val if you need to reassign:\n     var {name} = <value>"
+      - "Or shadow it with a new binding:\n     val {name}2 = newValue"
+    example_bad:  "val x = 10\nx = 20"
+    example_good: "var x = 10\nx = 20"
+
+  TYPE_MISMATCH:
+    message: "Type mismatch: expected '{expected}', got '{actual}'"
+    note: "Value does not match the declared type"
+    help:
+      - "Make sure both sides have the same type"
+      - "Use 'as any' to opt out of type checking if you know it is correct"
+
+  NOT_FUNCTION:
+    message: "'{name}' is not a function"
+    note: "'{name}' is not callable"
+    help:
+      - "'{name}' holds a value, not a function — check what it contains"
+      - "If it comes from an import, make sure the module exports it correctly"
+
+  NULL_ACCESS:
+    message: "Cannot access '{property}' on null or undefined"
+    note: "Value is null or undefined"
+    help:
+      - "Guard against null first:\n     ifset {name} as v { v.property }"
+      - "Use optional chaining:  {name}?.property"
+      - "Add a fallback:  {name} ?? defaultValue"
+
+runtime_translations:
+  "Cannot read propert": "Cannot access property — value is null or undefined"
+  "is not a function": "'{name}' is not a function"
+  "is not defined": "'{name}' is not defined"
+  "Maximum call stack": "Call stack overflow — infinite recursion detected"
+  "Cannot assign to read": "Cannot reassign a constant — use var instead of val"
+  "already been declared": "'{name}' has already been declared in this scope"

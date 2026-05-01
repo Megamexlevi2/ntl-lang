@@ -1,0 +1,23 @@
+# NTL Project Configuration
+# This file goes at the root of your project.
+# Run: ntl build ntl.yaml
+
+name: my-app
+version: 0.1.0
+
+src:  src
+dist: dist
+
+compilerOptions:
+  target:    node
+  strict:    true
+  minify:    false
+  treeShake: true
+
+include:
+  - "**/*.ntl"
+
+exclude:
+  - node_modules
+  - dist
+  - .ntl-cache

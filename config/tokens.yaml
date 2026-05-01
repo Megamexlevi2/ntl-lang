@@ -1,0 +1,46 @@
+# NTL Token Types
+# The lexer emits tokens of these types.
+# This file is a reference — token types are defined in src/pipeline/lexer.js.
+
+token_types:
+  KEYWORD:
+    description: "A reserved word (val, fn, if, class, etc.)"
+    example: "val"
+
+  IDENTIFIER:
+    description: "Any user-defined name — variable, function, class"
+    example: "myVariable"
+
+  NUMBER:
+    description: "A numeric literal — integer or float"
+    example: "42"
+
+  STRING:
+    description: "A single or double quoted string"
+    example: '"hello"'
+
+  TEMPLATE:
+    description: "A template literal — backtick string with ${} expressions"
+    example: "`Hello, ${name}!`"
+
+  OPERATOR:
+    description: "An operator symbol (+, -, *, /, |>, ??, etc.)"
+    example: "|>"
+
+  PUNCTUATION:
+    description: "Structural characters ({, }, (, ), [, ], ,, .)"
+    example: "{"
+
+  REGEX:
+    description: "A regular expression literal"
+    example: "/^\\d+$/"
+
+  EOF:
+    description: "End of file — marks the end of the token stream"
+
+comment_styles:
+  single_line: "//"
+  multi_line_start: "/*"
+  multi_line_end: "*/"
+  hash: "#"
+  description: "NTL supports all three comment styles"

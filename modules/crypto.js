@@ -1,120 +1,243 @@
-// Created by David Dev
-// GitHub: https://github.com/Megamexlevi2/ntl-lang
-// © David Dev 2026. All rights reserved.
-
 'use strict';
-const nodeCrypto = require('crypto');
-function sha256(input) {
-  return nodeCrypto.createHash('sha256').update(String(input)).digest('hex');
+
+// ntl:crypto — cryptographic utilities for backend services
+// Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
+// Uses only Node.js built-in crypto module. Zero external dependencies.
+
+const crypto = require('crypto');
+
+// ─── Hashing ──────────────────────────────────────────────────────────────────
+
+function sha256(data, encoding) {
+  return crypto.createHash('sha256').update(data).digest(encoding || 'hex');
 }
-function sha512(input) {
-  return nodeCrypto.createHash('sha512').update(String(input)).digest('hex');
+
+function sha512(data, encoding) {
+  return crypto.createHash('sha512').update(data).digest(encoding || 'hex');
 }
-function md5(input) {
-  return nodeCrypto.createHash('md5').update(String(input)).digest('hex');
+
+function md5(data, encoding) {
+  return crypto.createHash('md5').update(data).digest(encoding || 'hex');
 }
-function sha1(input) {
-  return nodeCrypto.createHash('sha1').update(String(input)).digest('hex');
+
+function hash(algorithm, data, encoding) {
+  return crypto.createHash(algorithm).update(data).digest(encoding || 'hex');
 }
-function hmac(algorithm, key, data) {
-  return nodeCrypto.createHmac(algorithm, key).update(String(data)).digest('hex');
+
+function hmac(algorithm, key, data, encoding) {
+  return crypto.createHmac(algorithm, key).update(data).digest(encoding || 'hex');
 }
-function hmacSha256(key, data) { return hmac('sha256', key, data); }
-function hmacSha512(key, data) { return hmac('sha512', key, data); }
-function randomBytes(n) {
-  return nodeCrypto.randomBytes(n || 16).toString('hex');
+
+function hmacSHA256(key, data, encoding) { return hmac('sha256', key, data, encoding); }
+function hmacSHA512(key, data, encoding) { return hmac('sha512', key, data, encoding); }
+
+// ─── BCrypt (pure Node.js PBKDF2-based, bcrypt-compatible API) ───────────────
+
+const BCRYPT_ROUNDS = 10;
+
+async function bcryptHash(password, rounds) {
+  rounds = rounds || BCRYPT_ROUNDS;
+  const salt = crypto.randomBytes(16);
+  const iterations = Math.pow(2, rounds);
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(password, salt, iterations, 32, 'sha512', (err, key) => {
+      if (err) return reject(err);
+      const buf = Buffer.alloc(49);
+      buf[0] = rounds;
+      salt.copy(buf, 1);
+      key.copy(buf, 17);
+      resolve('$ntl$' + rounds + '$' + buf.toString('base64url'));
+    });
+  });
 }
-function randomInt(min, max) {
-  if (max === undefined) { max = min; min = 0; }
-  return nodeCrypto.randomInt(min, max);
+
+async function bcryptVerify(password, hash) {
+  if (!hash.startsWith('$ntl$')) return false;
+  const parts = hash.split('$');
+  const rounds = parseInt(parts[2]);
+  const buf = Buffer.from(parts[3], 'base64url');
+  const salt = buf.slice(1, 17);
+  const stored = buf.slice(17);
+  const iterations = Math.pow(2, rounds);
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(password, salt, iterations, 32, 'sha512', (err, key) => {
+      if (err) return reject(err);
+      resolve(crypto.timingSafeEqual(key, stored));
+    });
+  });
 }
-function uuid() {
-  return nodeCrypto.randomUUID
-    ? nodeCrypto.randomUUID()
-    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = nodeCrypto.randomBytes(1)[0];
-        const v = c === 'x' ? r & 0xf : (r & 0x3 | 0x8);
-        return v.toString(16);
-      });
+
+// ─── AES-256-GCM encryption ───────────────────────────────────────────────────
+
+const AES_ALG  = 'aes-256-gcm';
+const IV_LEN   = 12;
+const TAG_LEN  = 16;
+const KEY_LEN  = 32;
+
+function randomKey() {
+  return crypto.randomBytes(KEY_LEN).toString('base64url');
 }
-function encryptAES(text, key) {
-  const keyBuf = nodeCrypto.createHash('sha256').update(String(key)).digest();
-  const iv = nodeCrypto.randomBytes(16);
-  const cipher = nodeCrypto.createCipheriv('aes-256-cbc', keyBuf, iv);
-  const encrypted = Buffer.concat([cipher.update(String(text), 'utf8'), cipher.final()]);
-  return iv.toString('hex') + ':' + encrypted.toString('hex');
+
+function aesEncrypt(plaintext, keyB64) {
+  const key = Buffer.from(keyB64, 'base64url').slice(0, KEY_LEN);
+  const iv  = crypto.randomBytes(IV_LEN);
+  const cipher = crypto.createCipheriv(AES_ALG, key, iv);
+  const enc    = Buffer.concat([cipher.update(String(plaintext), 'utf-8'), cipher.final()]);
+  const tag    = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString('base64url');
 }
-function decryptAES(data, key) {
-  const parts = String(data).split(':');
-  if (parts.length < 2) throw new Error('[ntl:crypto] Invalid encrypted data format');
-  const iv = Buffer.from(parts[0], 'hex');
-  const encrypted = Buffer.from(parts[1], 'hex');
-  const keyBuf = nodeCrypto.createHash('sha256').update(String(key)).digest();
-  const decipher = nodeCrypto.createDecipheriv('aes-256-cbc', keyBuf, iv);
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-  return decrypted.toString('utf8');
+
+function aesDecrypt(ciphertextB64, keyB64) {
+  const key  = Buffer.from(keyB64, 'base64url').slice(0, KEY_LEN);
+  const buf  = Buffer.from(ciphertextB64, 'base64url');
+  const iv   = buf.slice(0, IV_LEN);
+  const tag  = buf.slice(IV_LEN, IV_LEN + TAG_LEN);
+  const enc  = buf.slice(IV_LEN + TAG_LEN);
+  const dec  = crypto.createDecipheriv(AES_ALG, key, iv);
+  dec.setAuthTag(tag);
+  return Buffer.concat([dec.update(enc), dec.final()]).toString('utf-8');
 }
-function base64Encode(data) {
-  return Buffer.from(String(data), 'utf8').toString('base64');
+
+function deriveKey(password, salt, iterations, keyLen) {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(password, salt || 'ntl-salt', iterations || 100000, keyLen || KEY_LEN, 'sha512', (err, key) => {
+      if (err) reject(err);
+      else resolve(key.toString('base64url'));
+    });
+  });
 }
-function base64Decode(data) {
-  return Buffer.from(String(data), 'base64').toString('utf8');
-}
-function base64UrlEncode(data) {
-  return base64Encode(data).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-function base64UrlDecode(data) {
-  let s = String(data).replace(/-/g, '+').replace(/_/g, '/');
-  while (s.length % 4) s += '=';
-  return base64Decode(s);
-}
-function signJWT(payload, secret, expiresInSeconds) {
-  const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+
+// ─── JWT (HS256 / HS384 / HS512) ─────────────────────────────────────────────
+
+function b64url(buf)    { return (Buffer.isBuffer(buf) ? buf : Buffer.from(buf)).toString('base64url'); }
+function b64urlStr(s)   { return b64url(Buffer.from(s, 'utf-8')); }
+function parseB64(s)    { return JSON.parse(Buffer.from(s, 'base64url').toString('utf-8')); }
+
+const JWT_ALGOS = { HS256: 'sha256', HS384: 'sha384', HS512: 'sha512' };
+
+function signJWT(payload, secret, opts) {
+  opts = opts || {};
+  const alg  = opts.algorithm || 'HS256';
+  const algo = JWT_ALGOS[alg];
+  if (!algo) throw new Error(`Unsupported JWT algorithm: ${alg}`);
   const now = Math.floor(Date.now() / 1000);
-  const fullPayload = Object.assign({ iat: now }, payload);
-  if (expiresInSeconds) fullPayload.exp = now + expiresInSeconds;
-  const body = base64UrlEncode(JSON.stringify(fullPayload));
-  const sig = nodeCrypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
-  return `${header}.${body}.${sig}`;
+  const claims = Object.assign({}, payload, {
+    iat: now,
+    exp: opts.expiresIn  ? now + parseDuration(opts.expiresIn) : undefined,
+    nbf: opts.notBefore  ? now + parseDuration(opts.notBefore) : undefined,
+    iss: opts.issuer     || undefined,
+    aud: opts.audience   || undefined,
+    sub: opts.subject    || undefined,
+    jti: opts.jwtid      || undefined,
+  });
+  Object.keys(claims).forEach(k => claims[k] === undefined && delete claims[k]);
+  const header  = b64urlStr(JSON.stringify({ alg, typ: 'JWT' }));
+  const body    = b64urlStr(JSON.stringify(claims));
+  const sig     = crypto.createHmac(algo, secret).update(header + '.' + body).digest();
+  return `${header}.${body}.${b64url(sig)}`;
 }
-function verifyJWT(token, secret) {
+
+function verifyJWT(token, secret, opts) {
+  opts = opts || {};
   const parts = String(token).split('.');
-  if (parts.length !== 3) throw new Error('[ntl:crypto] Invalid JWT format');
-  const [header, body, sig] = parts;
-  const expectedSig = nodeCrypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
-  if (sig !== expectedSig) throw new Error('[ntl:crypto] JWT signature invalid');
-  const payload = JSON.parse(base64UrlDecode(body));
-  if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) {
-    throw new Error('[ntl:crypto] JWT has expired');
-  }
+  if (parts.length !== 3) throw new JWTError('Invalid token format');
+  let header, payload;
+  try { header  = parseB64(parts[0]); } catch(_) { throw new JWTError('Invalid header'); }
+  try { payload = parseB64(parts[1]); } catch(_) { throw new JWTError('Invalid payload'); }
+  const algo = JWT_ALGOS[header.alg];
+  if (!algo) throw new JWTError(`Unsupported algorithm: ${header.alg}`);
+  const expected = crypto.createHmac(algo, secret).update(parts[0] + '.' + parts[1]).digest();
+  const actual   = Buffer.from(parts[2], 'base64url');
+  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) throw new JWTError('Invalid signature');
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp && now > payload.exp) throw new JWTError('Token expired');
+  if (payload.nbf && now < payload.nbf) throw new JWTError('Token not yet valid');
+  if (opts.issuer   && payload.iss !== opts.issuer)   throw new JWTError('Invalid issuer');
+  if (opts.audience && payload.aud !== opts.audience) throw new JWTError('Invalid audience');
   return payload;
 }
-function constantTimeEqual(a, b) {
-  const ba = Buffer.from(String(a));
-  const bb = Buffer.from(String(b));
+
+function decodeJWT(token) {
+  const parts = String(token).split('.');
+  if (parts.length !== 3) return null;
+  try { return { header: parseB64(parts[0]), payload: parseB64(parts[1]) }; }
+  catch(_) { return null; }
+}
+
+class JWTError extends Error {
+  constructor(msg) { super(msg); this.name = 'JWTError'; }
+}
+
+function parseDuration(s) {
+  if (typeof s === 'number') return s;
+  const m = String(s).match(/^(\d+)\s*(s|m|h|d|w|y)?$/i);
+  if (!m) return 0;
+  const n = parseInt(m[1]);
+  const u = (m[2] || 's').toLowerCase();
+  const units = { s: 1, m: 60, h: 3600, d: 86400, w: 604800, y: 31536000 };
+  return n * (units[u] || 1);
+}
+
+// ─── Random ───────────────────────────────────────────────────────────────────
+
+function uuid()         { return crypto.randomUUID(); }
+function randomBytes(n) { return crypto.randomBytes(n); }
+function randomHex(n)   { return crypto.randomBytes(n || 16).toString('hex'); }
+function randomBase64(n){ return crypto.randomBytes(n || 32).toString('base64url'); }
+function randomInt(min, max) { return min + crypto.randomInt(max - min + 1); }
+
+function randomString(length, charset) {
+  charset = charset || 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let out = '';
+  const bytes = crypto.randomBytes(length * 2);
+  for (let i = 0; i < length; i++) out += charset[bytes[i] % charset.length];
+  return out;
+}
+
+// ─── Encoding helpers ─────────────────────────────────────────────────────────
+
+const encode = {
+  base64:    (s) => Buffer.from(s).toString('base64'),
+  base64url: (s) => Buffer.from(s).toString('base64url'),
+  hex:       (s) => Buffer.from(s).toString('hex'),
+};
+
+const decode = {
+  base64:    (s) => Buffer.from(s, 'base64').toString('utf-8'),
+  base64url: (s) => Buffer.from(s, 'base64url').toString('utf-8'),
+  hex:       (s) => Buffer.from(s, 'hex').toString('utf-8'),
+};
+
+function timingSafeEqual(a, b) {
+  const ba = Buffer.isBuffer(a) ? a : Buffer.from(String(a));
+  const bb = Buffer.isBuffer(b) ? b : Buffer.from(String(b));
   if (ba.length !== bb.length) return false;
-  return nodeCrypto.timingSafeEqual(ba, bb);
+  return crypto.timingSafeEqual(ba, bb);
 }
-function hashPassword(password, rounds) {
-  rounds = rounds || 10000;
-  const salt = nodeCrypto.randomBytes(16).toString('hex');
-  const hash = nodeCrypto.pbkdf2Sync(String(password), salt, rounds, 64, 'sha512').toString('hex');
-  return `${rounds}:${salt}:${hash}`;
+
+// ─── Checksum ─────────────────────────────────────────────────────────────────
+
+function checksum(data, algorithm) {
+  return crypto.createHash(algorithm || 'sha256').update(data).digest('hex');
 }
-function verifyPassword(password, stored) {
-  const parts = String(stored).split(':');
-  if (parts.length !== 3) return false;
-  const [rounds, salt, hash] = parts;
-  const derived = nodeCrypto.pbkdf2Sync(String(password), salt, parseInt(rounds), 64, 'sha512').toString('hex');
-  return constantTimeEqual(hash, derived);
+
+async function checksumFile(filePath, algorithm) {
+  const fs = require('fs');
+  return new Promise((resolve, reject) => {
+    const h   = crypto.createHash(algorithm || 'sha256');
+    const str = fs.createReadStream(filePath);
+    str.on('data', d => h.update(d));
+    str.on('end',  () => resolve(h.digest('hex')));
+    str.on('error', reject);
+  });
 }
+
 module.exports = {
-  sha256, sha512, md5, sha1,
-  hmac, hmacSha256, hmacSha512,
-  randomBytes, randomInt, uuid,
-  encryptAES, decryptAES,
-  base64Encode, base64Decode, base64UrlEncode, base64UrlDecode,
-  signJWT, verifyJWT,
-  constantTimeEqual,
-  hashPassword, verifyPassword
+  sha256, sha512, md5, hash, hmac, hmacSHA256, hmacSHA512,
+  bcryptHash, bcryptVerify,
+  aesEncrypt, aesDecrypt, randomKey, deriveKey,
+  signJWT, verifyJWT, decodeJWT, JWTError,
+  uuid, randomBytes, randomHex, randomBase64, randomInt, randomString,
+  encode, decode, timingSafeEqual,
+  checksum, checksumFile,
 };

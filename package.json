@@ -1,24 +1,19 @@
 {
-  "name": "@david0dev/ntl-lang",
-  "version": "3.5.2",
-  "description": "NTL — A programming language for teams that ship. Fast, typed, Node.js compatible.",
+  "name": "@ntl-team/ntl-lang",
+  "version": "4.0.0",
+  "description": "NTL — A backend programming language that compiles to JavaScript.",
   "author": "David Dev (https://github.com/Megamexlevi2)",
   "license": "Apache-2.0",
   "main": "main.js",
   "bin": {
-    "ntl": "./main.js"
+    "ntl": "./main.js",
+    "nax": "./main.js"
   },
   "scripts": {
-    "start": "node main.js",
-    "repl": "node main.js repl",
-    "test": "node main.js run tests/all.ntl",
-    "demo": "node main.js run examples/demo_v2.ntl",
-    "ide": "node main.js ide",
-    "jit": "node main.js jit",
-    "wasm": "node main.js wasm",
-    "native": "node main.js native",
-    "tutorial": "node tutorial.js",
-    "eval": "node main.js -e"
+    "start":    "node main.js",
+    "repl":     "node main.js repl",
+    "test":     "node main.js run tests/all.ntl",
+    "eval":     "node main.js -e"
   },
   "keywords": [
     "ntl",
@@ -26,24 +21,15 @@
     "language",
     "compiler",
     "transpiler",
-    "typescript-alternative",
-    "javascript",
+    "backend",
     "node",
-    "production",
-    "database",
-    "http",
+    "javascript",
     "server",
-    "jwt",
+    "http",
+    "database",
     "sqlite",
-    "validation",
-    "jit",
-    "wasm",
-    "webassembly",
-    "native",
-    "terminal-ide",
-    "multi-arch",
-    "aot",
-    "hot-path"
+    "jwt",
+    "validation"
   ],
   "engines": {
     "node": ">=18.0.0"
