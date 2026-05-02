@@ -1,0 +1,47 @@
+# src/pipeline/codegen — JavaScript code generator
+#
+# Split from the original single 940-line codegen.js into focused modules.
+# index.js is the only public entry point; sub-modules are internal.
+
+modules:
+  index:
+    file: index.js
+    public: true
+    exports: [CodeGen, generate, safeId]
+    description: >
+      Assembles the CodeGen class from sub-modules and exports it.
+      Use `new CodeGen(opts).gen(ast)` or the `generate(ast, opts)` shorthand.
+
+  helpers:
+    file: helpers.js
+    public: false
+    description: >
+      Pure utility functions: indentation padding, safe JS identifier
+      conversion, destructure pattern serialisation, parameter list
+      serialisation, and the reassigned-variable scanner.
+
+  stmts:
+    file: stmts.js
+    public: false
+    description: >
+      Statement-level generators mixed into CodeGen.
+      Covers: var/val declarations, functions, enums, namespaces,
+      if/unless, for/of/in, while, repeat, guard, defer, assert,
+      try/catch, import, export, NTL require, component, select,
+      immutable, have/ifhave/ifset, and block generation.
+
+  class:
+    file: class.js
+    public: false
+    description: >
+      Class declarations, match statements, and decorators.
+      These are the most complex statement types and deserve isolation.
+
+  exprs:
+    file: exprs.js
+    public: false
+    description: >
+      Expression-level generators: literals, template strings, object/array
+      literals, function expressions, arrow functions, member access, calls,
+      binary/unary operators, pipeline, range, have/between/matches/is,
+      try-safe expressions, and nax imports.

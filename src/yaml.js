@@ -1,6 +1,4 @@
 'use strict';
-
-// NTL YAML Parser — YAML 1.2 core schema, no external dependencies
 // Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
 
 const _fs = require('fs');

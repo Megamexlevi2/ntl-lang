@@ -1,6 +1,6 @@
 {
   "name": "@ntl-team/ntl-lang",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "NTL — A backend programming language that compiles to JavaScript.",
   "author": "David Dev (https://github.com/Megamexlevi2)",
   "license": "Apache-2.0",

@@ -1,0 +1,13 @@
+# src/cli — command-line interface helpers
+#
+# The CLI layer is split from main.js to make each command independently
+# readable and testable.
+
+modules:
+  commands:
+    file: commands.js
+    exports: [cmdRun, cmdBuild, cmdBundle, cmdCheck, cmdWatch, cmdDev, cmdInit, cmdFmt, cmdNax]
+    description: >
+      One exported function per CLI command.
+      Each function receives a CLIContext object with shared helpers
+      (flags, colors, buildOpts, die, ok, info, fmtErr, runFile, …).

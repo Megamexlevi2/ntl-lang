@@ -1,0 +1,3 @@
+if have(teste) {
+  return teste
+}

@@ -1,0 +1,17 @@
+# src/transforms — optional source-code transforms applied before compilation
+
+modules:
+  jsx:
+    file: jsx.js
+    exports: [transformJSX, hasJSX]
+    description: >
+      Transforms JSX syntax into React.createElement calls before the
+      NTL lexer and parser run. Enabled automatically when JSX is detected,
+      or explicitly via --jsx flag.
+
+  formatter:
+    file: formatter.js
+    exports: [format]
+    description: >
+      Auto-formatter for NTL source files (`ntl fmt file.ntl`).
+      Normalises indentation, trailing whitespace, and brace style.

@@ -1,0 +1,42 @@
+# NTL — Node Transpiled Language
+# Root project manifest
+#
+# This file documents the top-level structure of the ntl-lang package.
+# For compiler configuration, see ntl.yaml (project-level) or config/*.yaml.
+#
+# HOW TO READ THE CODEBASE
+# ─────────────────────────
+# Start here, then follow the references:
+#
+#   main.js           CLI entry point — argument parsing and command dispatch
+#   src/compiler.js   Public compiler API  (Compiler class, compileSource, compileFile)
+#   src/pipeline/     Compilation stages in order:
+#     lexer.js          1. Tokenise source → Token[]
+#     parser.js         2. Parse tokens   → AST
+#     scope.js          3. Scope analysis  (undeclared vars, shadow warnings)
+#     typeinfer.js      4. Type inference  (optional, --strict / --type-check)
+#     treeshaker.js     5. Tree-shaking    (which runtime helpers are needed)
+#     codegen/          6. Code generation → JavaScript string
+#   src/runtime/      Module loader, bundler, nax package manager
+#   src/config/       YAML config loader (keywords, operators, compiler defaults, …)
+#   src/transforms/   Optional source transforms (JSX, formatter)
+#   src/cli/          CLI command implementations (one function per command)
+#   modules/          Pre-built standard library modules (ntl:http, ntl:db, …)
+#   config/           YAML config files read at compile time
+#   examples/         Example .ntl programs
+#   tests/            Test suite (run with: ntl run tests/all.ntl)
+
+name: ntl-lang
+version: 4.0.0
+license: Apache-2.0
+author: David Dev <https://github.com/Megamexlevi2>
+
+entry: main.js
+
+directories:
+  src:      Compiler source (pipeline, runtime, config, transforms, CLI)
+  modules:  Standard library module implementations
+  config:   YAML configuration files
+  examples: Example NTL programs
+  tests:    Test suite
+  nax:      nax browser runtime and Vite plugin

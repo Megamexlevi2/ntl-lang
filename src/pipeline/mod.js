@@ -5,9 +5,9 @@
 
 const { tokenize, TokenType } = require('./lexer');
 const { parse }               = require('./parser');
-const { CodeGen }             = require('./codegen');
+const { CodeGen, generate }   = require('./codegen/index');
 const { ScopeAnalyzer }       = require('./scope');
 const { TypeInferer }         = require('./typeinfer');
 const { TreeShaker }          = require('./treeshaker');
 
-module.exports = { tokenize, TokenType, parse, CodeGen, ScopeAnalyzer, TypeInferer, TreeShaker };
+module.exports = { tokenize, TokenType, parse, CodeGen, generate, ScopeAnalyzer, TypeInferer, TreeShaker };

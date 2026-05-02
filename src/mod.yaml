@@ -1,0 +1,37 @@
+# src — NTL compiler source root
+#
+# Main entry points for the compiler.
+# The public API is compiler.js — everything else is internal.
+
+modules:
+  compiler:
+    file: compiler.js
+    public: true
+    exports: [Compiler, NTL_VERSION, TARGETS]
+    description: >
+      Use `new Compiler(opts).compileSource(source, filename)` to compile a string,
+      or `compileFile(path)` / `compileProject(config)` for file/project builds.
+
+  error:
+    file: error.js
+    public: true
+    exports: [format, R]
+    description: Error formatting and ANSI colour helpers.
+
+  yaml:
+    file: yaml.js
+    public: false
+    description: Minimal YAML parser used to load config files.
+
+subdirectories:
+  pipeline:  # compiler pipeline stages (lexer → parser → scope → typeinfer → codegen)
+    mod: pipeline/mod.yaml
+
+  runtime:   # module loader, bundler, nax package manager
+    mod: runtime/mod.yaml
+
+  config:    # YAML config files loader
+    mod: config/mod.yaml
+
+  transforms: # optional source transforms (JSX, formatter)
+    mod: transforms/mod.yaml

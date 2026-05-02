@@ -482,31 +482,31 @@ val data = await res.json()
 Cryptographic utilities built on Node.js `crypto` — no external dependencies.
 
 ```ntl
-import { hash, bcrypt, aes, jwt, uuid, random } from "ntl:crypto"
+val crypto = require("ntl:crypto")
 
-// Password hashing (PBKDF2-based, bcrypt-compatible API)
-val hashed   = await bcrypt.hash("my-password")
-val isValid  = await bcrypt.verify("my-password", hashed)
+// Password hashing (PBKDF2-based)
+val hashed   = await crypto.bcryptHash("my-password")
+val isValid  = await crypto.bcryptVerify("my-password", hashed)
 
 // AES-256-GCM encryption
-val key       = aes.generateKey()
-val encrypted = aes.encrypt("sensitive data", key)
-val decrypted = aes.decrypt(encrypted, key)
+val key       = crypto.randomKey()
+val encrypted = crypto.aesEncrypt("sensitive data", key)
+val decrypted = crypto.aesDecrypt(encrypted, key)
 
-// JWT (HS256/384/512)
-val token   = jwt.sign({ userId: "123", role: "admin" }, "my-secret", { expiresIn: "1h" })
-val payload = jwt.verify(token, "my-secret")
+// JWT (HS256)
+val token   = crypto.signJWT({ userId: "123", role: "admin" }, "my-secret", 3600)
+val payload = crypto.verifyJWT(token, "my-secret")
 
 // Hashing
-val h1 = hash.sha256("hello")
-val h2 = hash.md5("hello")
-val h3 = hash.sha512("hello")
+val h1 = crypto.sha256("hello")
+val h2 = crypto.md5("hello")
+val h3 = crypto.sha512("hello")
 
 // UUID and random
-val id  = uuid()
-val n   = random.int(1, 100)
-val hex = random.hex(32)
-val b64 = random.base64(24)
+val id  = crypto.uuid()
+val n   = crypto.randomInt(1, 100)
+val hex = crypto.randomHex(32)
+val b64 = crypto.randomBase64(24)
 ```
 
 ### ntl:validate

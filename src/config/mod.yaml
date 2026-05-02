@@ -1,0 +1,34 @@
+# src/config — YAML-based compiler configuration loader
+#
+# All config files live in /config/*.yaml at the project root.
+# This module caches every loaded file so YAML parsing only happens once.
+
+modules:
+  loader:
+    file: loader.js
+    public: true
+    exports:
+      - load             # load(name) → parsed object
+      - clearCache
+      - getKeywords      # → string[]
+      - getKeywordSet    # → Set<string>
+      - getOperators     # → { multi, single, punctuation }
+      - getErrorMessages
+      - getCompilerDefaults
+      - getLintRules
+      - getTargets
+      - getStdlib
+      - getModuleMap
+      - getNaxConfig
+      - getTokenTypes
+      - CONFIG_DIR
+
+config_files:
+  compiler.yaml:     Compiler defaults (target, strict, minify, …)
+  keywords.yaml:     All NTL reserved keywords, grouped by category.
+  operators.yaml:    Multi-char, single-char, and punctuation operators.
+  tokens.yaml:       Token type definitions.
+  stdlib.yaml:       Standard library module list.
+  nax.yaml:          nax package manager settings.
+  lint.yaml:         Built-in lint rules.
+  error-messages.yaml: Human-readable error message templates.

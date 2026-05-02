@@ -724,7 +724,7 @@ class CodeGen {
         iife += ` })()`;
         return iife;
       }
-      case 'NumberLit':    return typeof node.value==='bigint'?String(node.value)+'n':JSON.stringify(node.value);
+      case 'NumberLit':    return typeof node.value==='bigint'?String(node.value)+'n':String(node.value);
       case 'StringLit':    return JSON.stringify(node.value);
       case 'BoolLit':      return String(node.value);
       case 'NullLit':      return 'null';

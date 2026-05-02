@@ -1,0 +1,38 @@
+# src/runtime — module loading, bundling, and nax package management
+
+modules:
+  loader:
+    file: loader.js
+    exports: [Loader, loadStdlibModule]
+    description: >
+      Loads NTL standard library modules.
+      Compiles .ntl stdlib modules on first use and caches the result.
+      Falls back to pre-built .js files in /modules when available.
+
+  resolver:
+    file: resolver.js
+    exports: [resolveToPath, resolveModule, resolveModuleName, NAX_RUNTIME_PATH]
+    description: >
+      Resolves `ntl:name` and `nax:url` specifiers to absolute file paths.
+      Used by codegen (require expressions) and the run-time module loader.
+
+  bundler:
+    file: bundler.js
+    exports: [Bundler]
+    description: >
+      Bundles multiple compiled .ntl/.js files into a single self-contained
+      JavaScript file for distribution.
+
+  nax:
+    file: nax.js
+    exports: [naxInstall, naxList, naxClear, createModuleJson, CACHE_DIR]
+    description: >
+      nax package manager — installs NTL modules from GitHub.
+      Works like Cargo crates: each module is a git repo with a module.json.
+
+  ThreadPool:
+    file: ThreadPool.js
+    exports: [ThreadPool]
+    description: >
+      Worker-thread pool for CPU-bound tasks.
+      Wraps Node.js worker_threads with a simple task-queue interface.

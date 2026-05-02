@@ -1,9 +1,9 @@
 val crypto = require("ntl:crypto")
 
-val key    = crypto.randomBytes(16)
+val key    = crypto.randomKey()
 val msg    = "Hello from NTL!"
 val hashed = crypto.sha256(msg)
-val token  = crypto.token(32)
+val token  = crypto.randomHex(32)
 val uid    = crypto.uuid()
 
 log "Message:", msg
@@ -11,16 +11,16 @@ log "SHA-256:", hashed
 log "Token:  ", token
 log "UUID:   ", uid
 
-val encrypted = crypto.encryptAES(msg, key)
-val decrypted = crypto.decryptAES(encrypted, key)
+val encrypted = crypto.aesEncrypt(msg, key)
+val decrypted = crypto.aesDecrypt(encrypted, key)
 log "Encrypted:", encrypted
 log "Decrypted:", decrypted
 log "Match:", decrypted === msg
 
 val password = "super_secret_123"
-val stored   = crypto.hashPassword(password)
-val valid    = crypto.verifyPassword(password, stored)
-val invalid  = crypto.verifyPassword("wrong_password", stored)
+val stored   = await crypto.bcryptHash(password)
+val valid    = await crypto.bcryptVerify(password, stored)
+val invalid  = await crypto.bcryptVerify("wrong_password", stored)
 
 log "Password stored:", stored.slice(0, 20) + "..."
 log "Valid password:", valid

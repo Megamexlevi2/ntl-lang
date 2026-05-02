@@ -1,0 +1,43 @@
+# src/pipeline — compiler pipeline
+#
+# Each module is a single, focused compilation stage.
+# They are meant to be used in order: lexer → parser → scope → typeinfer → codegen
+#
+# To import the whole pipeline at once:
+#   const pipeline = require('./src/pipeline');
+
+modules:
+  lexer:
+    file: lexer.js
+    exports: [Lexer, Token, TokenType, tokenize, BUILTIN_KEYWORDS, getKeywords]
+    description: Tokenises NTL source into a flat token array.
+
+  parser:
+    file: parser.js
+    exports: [parse]
+    description: Converts a token array into an AST.
+
+  scope:
+    file: scope.js
+    exports: [ScopeAnalyzer]
+    description: Checks for undeclared variables and scope errors.
+
+  typeinfer:
+    file: typeinfer.js
+    exports: [TypeInferer]
+    description: Optional type-checker — only runs when strict or typeCheck is true.
+
+  treeshaker:
+    file: treeshaker.js
+    exports: [TreeShaker]
+    description: Determines which runtime helpers the compiled code needs.
+
+  codegen:
+    file: codegen/index.js
+    exports: [CodeGen, generate, safeId]
+    description: Converts an AST to JavaScript source.
+    submodules:
+      - codegen/helpers.js   # padding, destructure, params, reassignment scan
+      - codegen/stmts.js     # if/for/try/import/export and all other statements
+      - codegen/class.js     # class declarations, match, decorators
+      - codegen/exprs.js     # literals, calls, operators, NTL-specific expressions
