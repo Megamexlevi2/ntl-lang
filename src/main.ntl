@@ -1,7 +1,0 @@
-val name: string = "World"
-
-fn greet(name: string) -> string {
-  return `Hello, ${name}!`
-}
-
-log greet(name)
