@@ -2,15 +2,15 @@
 
 **Version 4.0.0** · Created by David Dev · [github.com/Megamexlevi2/ntl-lang](https://github.com/Megamexlevi2/ntl-lang)
 
-NTL is a compiled language that runs on Node.js. It compiles to plain JavaScript, ships with a complete set of built-in modules, and needs zero external dependencies for most backend work. Write less boilerplate, ship faster.
+NTL is a transpiled language that runs on Node.js. It compiles to plain JavaScript, ships with a complete standard library, and needs zero external dependencies for most backend work. Write less boilerplate, ship faster.
 
 ---
 
 ## Why NTL?
 
-Every backend project ends up installing the same fifteen packages: an HTTP framework, a validation library, a crypto helper, a logger, a job queue, a cache, a mailer. Each one has its own API, its own update cycle, its own breaking changes, and its own security advisories. Before you write a single line of business logic, you are already managing a dependency graph.
+Every backend project ends up installing the same fifteen packages: an HTTP framework, a validation library, a crypto helper, a logger, a job queue, a cache, a mailer. Each one has its own API, its own update cycle, its own breaking changes, and its own security advisories. Before you write a single line of business logic, you're already managing a dependency graph.
 
-NTL ships all of that as the language itself.
+NTL ships all of that as part of the language itself.
 
 - **One binary, zero config** — `ntl run app.ntl` just works, no setup file needed
 - **Built-in modules for real work** — HTTP server, crypto, validation, logger, cache, job queue, WebSockets, mail, database, file system, test runner, AI clients — all included, all using the same consistent API style
@@ -54,7 +54,7 @@ NTL ships all of that as the language itself.
 6. [Compiler Pipeline](#compiler-pipeline)
 7. [Configuration](#configuration)
 8. [Examples](#examples)
-9. [Enterprise Adoption Guide](#enterprise-adoption-guide)
+9. [Deployment](#deployment)
 10. [Contributing](#contributing)
 11. [License](#license)
 
@@ -65,22 +65,21 @@ NTL ships all of that as the language itself.
 **Prerequisites:** Node.js 18 or newer.
 
 ```bash
-# Clone the repository
+# Install globally via npm
+npm install -g @ntl-team/ntl-lang
+ntl run file.ntl
+```
+
+Alternatively, clone and link manually:
+
+```bash
 git clone https://github.com/Megamexlevi2/ntl-lang.git
 cd ntl-lang
 
-# Make the binary executable
 chmod +x main.js
-
-# Optional: install globally
 npm link
-# or copy to PATH:
+# or copy directly to PATH:
 cp main.js /usr/local/bin/ntl
-
-or
-
-npm install -g @ntl-team/ntl-lang
-ntl run file.ntl
 ```
 
 ---
@@ -392,6 +391,10 @@ import { Cache }                from "ntl:cache"
 import express      from "express"
 import { readFile } from "fs/promises"
 
+// CommonJS packages
+const stripe = require("stripe")
+const jwt    = require("jsonwebtoken")
+
 // Exporting
 export fn add(a: number, b: number): number { return a + b }
 export val PI = 3.14159
@@ -453,10 +456,10 @@ app.post("/users", async (req, res) -> {
 
 // Router
 val userRouter = new Router()
-userRouter.get("/",      listUsers)
-userRouter.get("/:id",   getUser)
-userRouter.post("/",     createUser)
-userRouter.delete("/:id",deleteUser)
+userRouter.get("/",       listUsers)
+userRouter.get("/:id",    getUser)
+userRouter.post("/",      createUser)
+userRouter.delete("/:id", deleteUser)
 app.use("/users", userRouter)
 
 // SSE (Server-Sent Events)
@@ -482,11 +485,11 @@ val data = await res.json()
 Cryptographic utilities built on Node.js `crypto` — no external dependencies.
 
 ```ntl
-val crypto = require("ntl:crypto")
+import crypto from "ntl:crypto"
 
 // Password hashing (PBKDF2-based)
-val hashed   = await crypto.bcryptHash("my-password")
-val isValid  = await crypto.bcryptVerify("my-password", hashed)
+val hashed  = await crypto.bcryptHash("my-password")
+val isValid = await crypto.bcryptVerify("my-password", hashed)
 
 // AES-256-GCM encryption
 val key       = crypto.randomKey()
@@ -537,19 +540,19 @@ val user = result.value  // typed and validated
 
 **Available schema types:**
 
-| Type                  | Modifiers                                                          |
-|-----------------------|--------------------------------------------------------------------|
-| `schema.string()`     | `.min()` `.max()` `.email()` `.url()` `.uuid()` `.regex()` `.nonempty()` |
-| `schema.number()`     | `.min()` `.max()` `.int()` `.positive()` `.between()` `.finite()` |
-| `schema.boolean()`    | Coerces `"true"` / `"1"` automatically                            |
-| `schema.date()`       | `.min()` `.max()` `.past()` `.future()`                            |
-| `schema.array(item)`  | `.min()` `.max()` `.nonempty()` `.unique()`                        |
-| `schema.object(shape)`| `.strict()` `.partial()` `.pick()` `.omit()` `.extend()`          |
-| `schema.union(...)`   | First matching schema wins                                         |
-| `schema.enum(values)` | Must be one of the listed values                                   |
-| `schema.literal(val)` | Must be exactly this value                                         |
-| `schema.record(k, v)` | Dictionary with typed keys and values                              |
-| `schema.any()`        | Accepts any value                                                  |
+| Type                   | Modifiers                                                                |
+|------------------------|--------------------------------------------------------------------------|
+| `schema.string()`      | `.min()` `.max()` `.email()` `.url()` `.uuid()` `.regex()` `.nonempty()` |
+| `schema.number()`      | `.min()` `.max()` `.int()` `.positive()` `.between()` `.finite()`        |
+| `schema.boolean()`     | Coerces `"true"` / `"1"` automatically                                   |
+| `schema.date()`        | `.min()` `.max()` `.past()` `.future()`                                  |
+| `schema.array(item)`   | `.min()` `.max()` `.nonempty()` `.unique()`                              |
+| `schema.object(shape)` | `.strict()` `.partial()` `.pick()` `.omit()` `.extend()`                 |
+| `schema.union(...)`    | First matching schema wins                                               |
+| `schema.enum(values)`  | Must be one of the listed values                                         |
+| `schema.literal(val)`  | Must be exactly this value                                               |
+| `schema.record(k, v)`  | Dictionary with typed keys and values                                    |
+| `schema.any()`         | Accepts any value                                                        |
 
 ### ntl:logger
 
@@ -624,7 +627,7 @@ import { EventEmitter } from "ntl:events"
 
 val bus = new EventEmitter({ wildcard: true })
 
-bus.on("user:created", (user) -> log `New user: ${user.name}`)
+bus.on("user:created", (user)        -> log `New user: ${user.name}`)
 bus.on("user:*",       (event, user) -> log `User event: ${event}`)
 
 bus.emit("user:created", { name: "Alice" })
@@ -742,9 +745,9 @@ import env from "ntl:env"
 
 env.load()  // loads .env file
 
-val host  = env.get("HOST", "localhost")
-val port  = env.getNumber("PORT", 3000)
-val debug = env.getBoolean("DEBUG", false)
+val host   = env.get("HOST", "localhost")
+val port   = env.getNumber("PORT", 3000)
+val debug  = env.getBoolean("DEBUG", false)
 val secret = env.require("SESSION_SECRET")
 
 // Schema-based config
@@ -761,7 +764,7 @@ if env.isProd() { log "Running in production mode" }
 
 ### ntl:db
 
-Built-in JSON-backed SQLite (no native bindings) and a pool factory.
+Built-in SQLite support (no native bindings) and a connection pool factory.
 
 ```ntl
 import { sqlite, createPool } from "ntl:db"
@@ -894,7 +897,7 @@ val claude = anthropic({ model: "claude-3-5-sonnet-20241022" })
 val reply2 = await claude.complete("What is TypeScript?", { system: "Be concise." })
 
 // Local Ollama
-val llama = ollama({ model: "llama3" })
+val llama  = ollama({ model: "llama3" })
 val reply3 = await llama.complete("Hello!")
 val models = await llama.models()
 ```
@@ -1017,7 +1020,7 @@ features:
 
 ### config/keywords.yaml
 
-Extends the lexer's keyword list. The keywords are organized by category and loaded automatically.
+Extends the lexer's keyword list. Keywords are organized by category and loaded automatically.
 
 ```yaml
 version: "3.5.2"
@@ -1247,18 +1250,18 @@ app.listen(env.getNumber("PORT", 3000))
 
 ---
 
-## Enterprise Adoption Guide
+## Deployment
 
-NTL integrates cleanly into existing Node.js infrastructure. You can migrate gradually — run NTL files alongside existing JavaScript code.
+NTL integrates cleanly into existing Node.js infrastructure. You can migrate gradually — NTL files run alongside your existing JavaScript code without any special setup.
 
-### Production deployment
+### Production
 
 ```bash
-# Option 1: compile to JavaScript, then run with Node
+# Compile to JavaScript, then run with Node
 ntl build src/main.ntl --out dist/ --target cjs
 node dist/main.js
 
-# Option 2: run NTL files directly with the runtime
+# Or run NTL files directly with the runtime
 node main.js run src/app.ntl
 ```
 
@@ -1274,7 +1277,7 @@ CMD ["node", "main.js", "run", "src/app.ntl"]
 
 ### Using npm packages
 
-NTL works with every npm package. Import them exactly as in Node.js:
+NTL works with every npm package. Import them the same way you would in Node.js:
 
 ```ntl
 import express          from "express"
@@ -1283,25 +1286,12 @@ import Stripe           from "stripe"
 import { Kysely }       from "kysely"
 import { Redis }        from "ioredis"
 import { PrismaClient } from "@prisma/client"
+
+// CommonJS packages work too
+const knex = require("knex")
 ```
 
-### Why would a company adopt NTL?
-
-The built-in modules are the starting point, not the whole answer. Here is the actual case:
-
-**Dependency sprawl is a real cost.** A typical Node.js backend service has 30–80 direct and transitive dependencies just to cover HTTP, validation, crypto, logging, and queueing. Every dependency is a potential CVE, a breaking upgrade, and a maintenance burden. When you install express, you are also implicitly agreeing to maintain body-parser, accepts, mime-types, and a dozen others. NTL eliminates that overhead for the core of every service.
-
-**Consistency across teams.** When one team handles HTTP with Fastify and another uses Express, and one logs with pino while another uses winston, reading unfamiliar code costs time. NTL gives every team the same HTTP API, the same validation API, the same logger API. New developers read the docs once and contribute on day one.
-
-**Upgrade once, everything moves together.** When NTL releases a new version, all built-in modules are tested and updated together. There are no compatibility matrices between your HTTP framework version, your validation library version, and your logger version. One upgrade, one changelog.
-
-**Smaller attack surface.** A minimal `package.json` with only your actual business dependencies means fewer places for a compromised package to hide. Security audits are simpler when there are fewer packages to audit.
-
-**Faster project bootstrap.** Starting a new service in NTL means writing code immediately — not spending the first two days choosing between four HTTP frameworks, evaluating validation libraries, configuring a logger, and wiring them all together with slightly different conventions each time.
-
-**Still runs on the same infrastructure.** NTL compiles to JavaScript. Your existing CI/CD pipelines, Docker images, serverless platforms, and monitoring tools all continue to work without changes.
-
-### CI/CD Integration
+### CI/CD
 
 ```yaml
 # .github/workflows/ci.yml
