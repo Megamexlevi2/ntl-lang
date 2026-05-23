@@ -419,4 +419,7 @@ module.exports = {
   StringSchema, NumberSchema, BooleanSchema, DateSchema,
   ArraySchema, ObjectSchema, UnionSchema, LiteralSchema,
   EnumSchema, AnySchema, RecordSchema, IntersectionSchema,
+  // Spread schema methods at top-level so validate.string(), validate.number(), etc. work directly
+  ...schema,
+  object:       (shape)    => new ObjectSchema(shape),
 };

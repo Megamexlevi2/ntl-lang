@@ -44,31 +44,41 @@ function cmdBuild(ctx) {
   const { positional, flags, die, ok, buildOpts, compileAndWrite, fmtErr, colors, NTL_DIR } = ctx;
   const { CYAN, GRAY, RED } = colors;
   const fileArg = positional[1];
-  if (!fileArg)                die('Usage: ntl build <file.ntl|ntl.yaml> [-o output.js]');
+
+  if (!fileArg) die('Usage: ntl build <file.ntl|ntl.yaml> [-o output.js]');
   if (!fs.existsSync(fileArg)) die(`File not found: ${fileArg}`);
 
   if (flags.reverse || flags.r) {
     const { reverseCompile } = require(path.join(NTL_DIR, 'src/reverse'));
-    const jsSrc     = fs.readFileSync(fileArg, 'utf-8');
+    const jsSrc = fs.readFileSync(fileArg, 'utf-8');
     const revResult = reverseCompile(jsSrc, fileArg);
+
     if (!revResult.success) {
-      for (const e of revResult.errors) process.stderr.write(RED('  error') + ': ' + e.message + '\n');
+      for (const e of revResult.errors) {
+        process.stderr.write(RED('  error') + ': ' + e.message + '\n');
+      }
       process.exit(1);
     }
-    const outFile = flags.reverse !== true
+
+    const outFile = typeof flags.reverse === 'string'
       ? flags.reverse
-      : (flags.out || flags.o || fileArg.replace(/\.js$/, '.ntl'));
+      : (flags.out || flags.o || (fileArg.endsWith('.js') ? fileArg.replace(/\.js$/, '.ntl') : 'output.ntl'));
+
     fs.mkdirSync(path.dirname(path.resolve(outFile)), { recursive: true });
     fs.writeFileSync(outFile, revResult.code, 'utf-8');
+
     process.stdout.write('\n');
     ok(`${path.relative('.', fileArg)}  ${GRAY('→')}  ${CYAN(outFile)}`);
     process.stdout.write('\n');
     return;
   }
 
+  const outFile = flags.out || flags.o || (fileArg.endsWith('.ntl') ? fileArg.replace(/\.ntl$/, '.js') : 'output.js');
+
   process.stdout.write('\n');
-  compileAndWrite(fileArg, flags.out || flags.o || null, buildOpts());
+  compileAndWrite(fileArg, outFile, buildOpts());
 }
+
 
 /**
  * `ntl bundle <file.ntl|dir> [-o output.js]` — bundles into a single file.

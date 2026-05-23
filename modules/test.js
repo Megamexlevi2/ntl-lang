@@ -3,7 +3,7 @@
 // ntl:test — built-in test runner with describe/test/expect
 // Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
 
-const { EventEmitter } = require('./events');
+const { EventEmitter } = require(require('path').join(__dirname, 'events'));
 
 const RESET  = '\x1b[0m';
 const GREEN  = '\x1b[32m';
@@ -262,6 +262,8 @@ async function runSuite(suite, depth) {
 }
 
 async function run(opts) {
+  if (state._ran) return;
+  state._ran = true;
   opts = opts || {};
   state.start = Date.now();
   const filter = opts.filter || null;
@@ -289,3 +291,78 @@ process.nextTick(() => {
 });
 
 module.exports = { describe, it, test, expect, mockFn, beforeAll, afterAll, beforeEach, afterEach, run, AssertionError };
+
+// suite(name, fn) — passes a context object s with s.test(name, fn(t))
+function suite(name, fn) {
+  // Use a fresh sub-state so tests don't double-register
+  const prevCurrent = state.current;
+  const suiteObj = { name, tests: [], hooks: { before: [], after: [], beforeEach: [], afterEach: [] }, parent: prevCurrent };
+  state.current = suiteObj;
+
+  const s = {
+    test(tname, tfn) {
+      const t_ctx = {
+        equal(a, b, msg)     { if (a !== b) throw new AssertionError(msg || `Expected ${JSON.stringify(a)} to equal ${JSON.stringify(b)}`); },
+        notEqual(a, b, msg)  { if (a === b) throw new AssertionError(msg || `Expected values to differ`); },
+        deepEqual(a, b, msg) { if (!deepEqual(a, b)) throw new AssertionError(msg || `Expected deep equal: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`); },
+        ok(v, msg)           { if (!v) throw new AssertionError(msg || `Expected truthy, got ${JSON.stringify(v)}`); },
+        throws(fn2, msg)     { let threw=false; try{fn2();}catch(_){threw=true;} if(!threw) throw new AssertionError(msg||'Expected function to throw'); },
+      };
+      suiteObj.tests.push({ name: tname, fn: async () => tfn(t_ctx), opts: {}, status: 'pending', error: null, duration: 0 });
+    },
+    before(fn2)     { suiteObj.hooks.before.push(fn2); },
+    after(fn2)      { suiteObj.hooks.after.push(fn2); },
+    beforeEach(fn2) { suiteObj.hooks.beforeEach.push(fn2); },
+    afterEach(fn2)  { suiteObj.hooks.afterEach.push(fn2); },
+  };
+
+  fn(s);
+
+  state.current = prevCurrent;
+  if (prevCurrent) prevCurrent.tests.push({ suite: true, ref: suiteObj });
+  else state.suites.push(suiteObj);
+}
+
+const assert = {
+  equal(a, b, msg)     { if (a !== b) throw new AssertionError(msg || `Expected ${JSON.stringify(a)} === ${JSON.stringify(b)}`); },
+  notEqual(a, b, msg)  { if (a === b) throw new AssertionError(msg || `Expected values to differ`); },
+  deepEqual(a, b, msg) { if (!deepEqual(a, b)) throw new AssertionError(msg || `Deep equality failed`); },
+  ok(v, msg)           { if (!v) throw new AssertionError(msg || `Expected truthy`); },
+  throws(fn2, msg)     { let t=false; try{fn2();}catch(_){t=true;} if(!t) throw new AssertionError(msg||'Expected throw'); },
+};
+
+module.exports.suite  = suite;
+module.exports.assert = assert;
+
+// suite(name, fn) — passes a context object s with s.test(name, fn(t))
+function suite(name, fn) {
+  // Use a fresh sub-state so tests don't double-register
+  const prevCurrent = state.current;
+  const suiteObj = { name, tests: [], hooks: { before: [], after: [], beforeEach: [], afterEach: [] }, parent: prevCurrent };
+  state.current = suiteObj;
+
+  const s = {
+    test(tname, tfn) {
+      const t_ctx = {
+        equal(a, b, msg)     { if (a !== b) throw new AssertionError(msg || `Expected ${JSON.stringify(a)} to equal ${JSON.stringify(b)}`); },
+        notEqual(a, b, msg)  { if (a === b) throw new AssertionError(msg || `Expected values to differ`); },
+        deepEqual(a, b, msg) { if (!deepEqual(a, b)) throw new AssertionError(msg || `Expected deep equal: ${JSON.stringify(a)} !== ${JSON.stringify(b)}`); },
+        ok(v, msg)           { if (!v) throw new AssertionError(msg || `Expected truthy, got ${JSON.stringify(v)}`); },
+        throws(fn2, msg)     { let threw=false; try{fn2();}catch(_){threw=true;} if(!threw) throw new AssertionError(msg||'Expected function to throw'); },
+      };
+      suiteObj.tests.push({ name: tname, fn: async () => tfn(t_ctx), opts: {}, status: 'pending', error: null, duration: 0 });
+    },
+    before(fn2)     { suiteObj.hooks.before.push(fn2); },
+    after(fn2)      { suiteObj.hooks.after.push(fn2); },
+    beforeEach(fn2) { suiteObj.hooks.beforeEach.push(fn2); },
+    afterEach(fn2)  { suiteObj.hooks.afterEach.push(fn2); },
+  };
+
+  fn(s);
+
+  state.current = prevCurrent;
+  if (prevCurrent) prevCurrent.tests.push({ suite: true, ref: suiteObj });
+  else state.suites.push(suiteObj);
+}
+
+

@@ -651,7 +651,7 @@ class Parser {
     if(this.checkKw('true')) { this.advance(); return {kind:'literal',value:true}; }
     if(this.checkKw('false')) { this.advance(); return {kind:'literal',value:false}; }
     if(this.checkKw('undefined')) { this.advance(); return {kind:'literal',value:undefined}; }
-    if(t.type===TokenType.NUMBER) { this.advance(); return {kind:'literal',value:t.value}; }
+    if(t.type===TokenType.NUMBER) { this.advance(); const nv=t.value; return {kind:'literal',value:nv.endsWith('n')?BigInt(nv.slice(0,-1)):(nv.includes('.')||nv.includes('e')||nv.includes('E')?parseFloat(nv):parseInt(nv,nv.startsWith('0x')||nv.startsWith('0X')?16:nv.startsWith('0o')||nv.startsWith('0O')?8:nv.startsWith('0b')||nv.startsWith('0B')?2:10))}; }
     if(t.type===TokenType.STRING) { this.advance(); return {kind:'literal',value:t.value}; }
     if(this.check(TokenType.OPERATOR,'...')) { this.advance(); return {kind:'rest',name:this.eat(TokenType.IDENTIFIER).value}; }
     if(this.check(TokenType.PUNCTUATION,'[')) {

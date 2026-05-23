@@ -117,6 +117,7 @@ class EventEmitter {
   clearHistory() { if (this._history) this._history.length = 0; }
 
   listenerCount(event) { return (this._listeners.get(event) || []).length; }
+  count(event) { return this.listenerCount(event); }
   listeners(event)     { return [...(this._listeners.get(event) || [])]; }
   eventNames()         { return [...this._listeners.keys()]; }
 
