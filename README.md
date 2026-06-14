@@ -1,22 +1,23 @@
-# NTL — Node Transpiled Language
+# NTL-lang — Node Transpiled Language
 
-**Version 4.0.0** · Created by David Dev · [github.com/Megamexlevi2/ntl-lang](https://github.com/Megamexlevi2/ntl-lang)
+**Version 4.1.0** · Created by David Dev · [github.com/Megamexlevi2/ntl-lang](https://github.com/Megamexlevi2/ntl-lang)
 
-NTL is a transpiled language that runs on Node.js. It compiles to plain JavaScript, ships with a complete standard library, and needs zero external dependencies for most backend work. Write less boilerplate, ship faster.
+NTL-lang is a compiled language that runs on Node.js. It transpiles to clean JavaScript, ships with a complete standard library, and requires zero external dependencies for most backend work. Write less boilerplate, ship faster.
 
 ---
 
-## Why NTL?
+## Why NTL-lang?
 
 Every backend project ends up installing the same fifteen packages: an HTTP framework, a validation library, a crypto helper, a logger, a job queue, a cache, a mailer. Each one has its own API, its own update cycle, its own breaking changes, and its own security advisories. Before you write a single line of business logic, you're already managing a dependency graph.
 
-NTL ships all of that as part of the language itself.
+NTL-lang ships all of that as part of the language itself.
 
-- **One binary, zero config** — `ntl run app.ntl` just works, no setup file needed
-- **Built-in modules for real work** — HTTP server, crypto, validation, logger, cache, job queue, WebSockets, mail, database, file system, test runner, AI clients — all included, all using the same consistent API style
+- **One binary, zero config** — `ntl run app.ntl` just works, no setup needed
+- **Built-in modules for real work** — HTTP server, crypto, validation, logger, cache, job queue, WebSockets, mail, database, file system, test runner, AI clients — all included, all using the same consistent API
 - **Zero dependency risk for core functionality** — your `package.json` stays small; no supply chain exposure from dozens of transitive packages just to run a web server
 - **Full npm compatibility** — you can still import any npm package when you need something specific
-- **Compiled output** — produces clean, readable JavaScript; run it anywhere Node.js runs
+- **CommonJS output** — produces clean, readable CJS JavaScript; runs everywhere Node.js runs
+- **Selective embedding** — when you bundle a local module, only the functions actually used in your code are included in the output
 - **Strong types, useful errors** — type inference throughout, with error messages that include file, line, column, and a concrete suggestion
 
 ---
@@ -36,20 +37,6 @@ NTL ships all of that as part of the language itself.
    - [Modules](#modules)
    - [Error Handling](#error-handling)
 4. [Standard Library](#standard-library)
-   - [ntl:http](#ntlhttp)
-   - [ntl:crypto](#ntlcrypto)
-   - [ntl:validate](#ntlvalidate)
-   - [ntl:logger](#ntllogger)
-   - [ntl:cache](#ntlcache)
-   - [ntl:events](#ntlevents)
-   - [ntl:queue](#ntlqueue)
-   - [ntl:ws](#ntlws)
-   - [ntl:mail](#ntlmail)
-   - [ntl:env](#ntlenv)
-   - [ntl:db](#ntldb)
-   - [ntl:fs](#ntlfs)
-   - [ntl:test](#ntltest)
-   - [ntl:ai](#ntlai)
 5. [Module Manager: nax](#module-manager-nax)
 6. [Compiler Pipeline](#compiler-pipeline)
 7. [Configuration](#configuration)
@@ -114,7 +101,7 @@ Hello, world!
 
 ### Variables
 
-NTL has three variable declaration keywords:
+NTL-lang has three variable declaration keywords:
 
 | Keyword | Meaning                          |
 |---------|----------------------------------|
@@ -130,7 +117,7 @@ count = count + 1     // OK — var is mutable
 name = "Bob"          // Error — val is immutable
 ```
 
-Type annotations are optional. NTL infers types from the initial value:
+Type annotations are optional. NTL-lang infers types from the initial value:
 
 ```ntl
 val x = 42          // inferred as number
@@ -191,238 +178,225 @@ interface Animal {
 
 class Dog implements Animal {
   name: string
-  fn constructor(name: string) { this.name = name }
-  fn sound(): string { return "Woof" }
+  init(name: string) { this.name = name }
+  sound(): string { return "Woof" }
 }
 ```
 
 ### Functions
 
-Basic function:
-
 ```ntl
+// Basic function
 fn add(a: number, b: number): number {
   return a + b
 }
-```
 
-Arrow function:
-
-```ntl
-val double = (x: number) -> x * 2
-```
-
-Default parameters:
-
-```ntl
-fn greet(name: string, greeting: string = "Hello"): string {
+// Default parameters
+fn greet(name: string, greeting: string = "Hello") {
   return `${greeting}, ${name}!`
 }
-```
 
-Rest parameters:
-
-```ntl
+// Rest parameters
 fn sum(...nums: number[]): number {
-  return nums.reduce((acc, n) -> acc + n, 0)
+  return nums.reduce((a, b) => a + b, 0)
 }
-```
 
-Async functions:
+// Arrow function
+val double = (x) => x * 2
 
-```ntl
-async fn fetchUser(id: string): Promise<User> {
-  val res  = await fetch(`/api/users/${id}`)
-  return await res.json()
-}
+// Immediately invoked
+val result = ((x, y) => x + y)(3, 4)
 ```
 
 ### Classes
 
 ```ntl
-class Counter {
-  private count: number = 0
-  readonly name: string
-
-  fn constructor(name: string) {
-    this.name = name
-  }
-
-  fn increment(by: number = 1): void {
-    this.count += by
-  }
-
-  fn get value(): number {
-    return this.count
-  }
-
-  fn reset(): this {
-    this.count = 0
-    return this
-  }
-}
-
-val c = new Counter("visits")
-c.increment()
-c.increment(5)
-log c.value  // 6
-```
-
-**Inheritance:**
-
-```ntl
 class Animal {
-  fn constructor(public name: string) {}
-  fn speak(): string { return "..." }
+  init(name, sound) {
+    this.name  = name
+    this.sound = sound
+  }
+
+  speak() {
+    return `${this.name} says ${this.sound}!`
+  }
+
+  toString() {
+    return `Animal(${this.name})`
+  }
 }
 
-class Cat extends Animal {
-  fn speak(): string { return `${this.name} says meow` }
-}
-```
+class Dog extends Animal {
+  init(name, breed) {
+    super(name, "Woof")
+    this.breed = breed
+  }
 
-**Static and abstract:**
-
-```ntl
-abstract class Shape {
-  abstract fn area(): number
-  fn describe(): string { return `Area: ${this.area()}` }
+  fetch(item) {
+    return `${this.name} fetches the ${item}!`
+  }
 }
 
-class Config {
-  static val DEFAULT_PORT = 8080
-  static fn fromEnv(): Config { return new Config() }
-}
+val dog = new Dog("Rex", "Labrador")
+log dog.speak()
+log dog.fetch("ball")
 ```
 
 ### Control Flow
 
 ```ntl
-if age >= 18 {
-  log "adult"
-} elif age >= 13 {
-  log "teenager"
+// Standard if / elif / else
+if score >= 90 {
+  log "A"
+} elif score >= 80 {
+  log "B"
 } else {
-  log "child"
+  log "F"
 }
 
-unless user.isLoggedIn { redirect("/login") }
-
-for item of items { log item }
-for i   in range(0, 10) { log i }
-
-repeat 5 { log "hello" }
-
-loop {
-  val msg = await readMessage()
-  if msg == null { break }
-  process(msg)
+// unless — runs when condition is false
+unless loggedIn {
+  log "Please log in first"
 }
 
-each [1, 2, 3] as item { log item * 2 }
+// guard — early return if condition fails
+fn divide(a, b) {
+  guard b !== 0 else {
+    log "Division by zero"
+    return null
+  }
+  return a / b
+}
+
+// each — iterate over lists
+val fruits = ["apple", "banana", "cherry"]
+each fruit in fruits {
+  log fruit
+}
+
+// range
+each i in range(5) {
+  log `step ${i}`
+}
+
+// repeat N times
+var counter = 0
+repeat 5 { counter++ }
+
+// while
+while counter > 0 {
+  counter--
+}
+
+// defer — runs at end of scope (even on return)
+fn withCleanup() {
+  defer { log "connection closed" }
+  log "running query..."
+}
+
+// try? — returns null on error instead of throwing
+val parsed = try? JSON.parse(userInput)
 ```
 
 ### Pattern Matching
 
 ```ntl
-val result = match status {
-  case "ok"     -> "Success"
-  case "error"  -> "Failed"
-  default       -> "Unknown"
+fn classify(value) {
+  return match value {
+    case 0  => { "zero" }
+    case 1  => { "one"  }
+    default => { "other: " + value }
+  }
 }
 
-// Type matching
-match value {
-  case is string  -> log `String: ${value}`
-  case is number  -> log `Number: ${value}`
-  default         -> log "Other"
+fn describeType(x) {
+  return match typeof x {
+    case "string"  => { `string, length ${x.length}` }
+    case "number"  => { `number: ${x}` }
+    case "boolean" => { `boolean: ${x}` }
+    default        => { "other" }
+  }
 }
 
-// Guards
-match score {
-  case n when n >= 90 -> "A"
-  case n when n >= 80 -> "B"
-  default             -> "F"
-}
-
-// Object shape
-match event {
-  case { type: "click", target }  -> handleClick(target)
-  case { type: "keydown", key }   -> handleKey(key)
-  default                         -> log "unhandled"
-}
+log classify(0)         // "zero"
+log classify(42)        // "other: 42"
+log describeType("hi")  // "string, length 2"
 ```
 
 ### Async / Await
 
 ```ntl
-// Top-level await is supported
-val user = await fetchUser("123")
-
-// Parallel execution
-val [users, posts] = await Promise.all([fetchUsers(), fetchPosts()])
-
-// Error handling
-async fn safeGet(url: string) {
-  try {
-    val res = await fetch(url)
-    return await res.json()
-  } catch e {
-    log `Request failed: ${e.message}`
-    return null
+async fn fetchUser(id: number) {
+  await sleep(10)
+  return {
+    id,
+    name: `User ${id}`,
+    email: `user${id}@example.com`,
   }
 }
 
-// spawn — fire and forget
-spawn {
-  await sendAnalyticsEvent("page_view")
+async fn main() {
+  val user = await fetchUser(1)
+  log user.name, user.email
+
+  // Parallel fetch
+  val users = await Promise.all([1, 2, 3].map(id => fetchUser(id)))
+  log `Fetched ${users.length} users`
 }
+
+main()
 ```
 
 ### Modules
 
+NTL-lang uses **CommonJS** (`require` / `module.exports`) as its primary module system. This gives maximum compatibility with the Node.js ecosystem.
+
 ```ntl
-// NTL built-in modules
-import { Router, createServer } from "ntl:http"
-import { schema }               from "ntl:validate"
-import { Cache }                from "ntl:cache"
+// Import built-in NTL-lang module
+val http = require("ntl:http")
 
-// npm packages
-import express      from "express"
-import { readFile } from "fs/promises"
+// Import local module
+val math = require("./math.ntl")
 
-// CommonJS packages
-const stripe = require("stripe")
-const jwt    = require("jsonwebtoken")
+// Import npm package
+val express = require("express")
 
-// Exporting
-export fn add(a: number, b: number): number { return a + b }
-export val PI = 3.14159
-export default Calculator
+// Named destructure
+val { Cache }  = require("ntl:cache")
+val { Logger } = require("ntl:logger")
+
+// Export functions from a module file
+fn add(a, b) { return a + b }
+fn sub(a, b) { return a - b }
+
+export { add, sub }
 ```
+
+> **Why CommonJS?** NTL-lang compiles to CJS by default because it runs on Node.js and needs zero configuration. If you need ES module output for a browser or Deno target, use `ntl build --target esm` (see CLI reference).
 
 ### Error Handling
 
 ```ntl
+// try / catch / finally
 try {
   val data = JSON.parse(input)
-  process(data)
+  log data
 } catch e {
-  log `Parse error: ${e.message}`
+  log "Parse error:", e.message
 } finally {
-  cleanup()
+  log "always runs"
 }
 
-fn divide(a: number, b: number): number {
-  if b == 0 { raise new Error("Division by zero") }
-  return a / b
+// throw
+fn requirePositive(n) {
+  if n <= 0 { throw new Error(`Expected positive, got ${n}`) }
+  return n
 }
 
-class AppError extends Error {
-  fn constructor(public code: string, message: string) {
-    super(message)
-    this.name = "AppError"
-  }
+// try? — safe call, returns null on error
+val result = try? riskyOperation()
+if result !== null {
+  log "Success:", result
 }
 ```
 
@@ -430,371 +404,255 @@ class AppError extends Error {
 
 ## Standard Library
 
-All built-in modules are imported with the `ntl:` prefix and have zero external dependencies — only Node.js built-ins.
+All built-in modules are imported with the `ntl:` prefix.
 
 ### ntl:http
 
-Full-featured HTTP server and client.
+HTTP server with Express-like routing.
 
 ```ntl
-import { createServer, Router, json, cors, rateLimit, staticFiles } from "ntl:http"
+val http = require("ntl:http")
 
-val app = createServer()
+val app = http.createServer()
 
-app.use(json())
-app.use(cors({ origin: "*" }))
-app.use(rateLimit({ windowMs: 60_000, max: 100 }))
-
-app.get("/health", (req, res) -> {
-  res.json({ status: "ok", time: Date.now() })
+app.get("/", (req, res) => {
+  res.json({ message: "Hello from NTL-lang!", version: "4.1.0" })
 })
 
-app.post("/users", async (req, res) -> {
-  val user = await db.createUser(req.body)
-  res.status(201).json(user)
+app.get("/users/:id", (req, res) => {
+  val id = parseInt(req.params.id)
+  guard !isNaN(id) else {
+    res.status(400).json({ error: "Invalid user ID" })
+    return
+  }
+  res.json({ id, name: `User ${id}`, email: `user${id}@example.com` })
 })
 
-// Router
-val userRouter = new Router()
-userRouter.get("/",       listUsers)
-userRouter.get("/:id",    getUser)
-userRouter.post("/",      createUser)
-userRouter.delete("/:id", deleteUser)
-app.use("/users", userRouter)
-
-// SSE (Server-Sent Events)
-app.get("/events", (req, res) -> {
-  res.sse()
-  val timer = setInterval(() -> res.sseEvent("update", { time: Date.now() }), 1000)
-  req.on("close", () -> clearInterval(timer))
+app.post("/echo", (req, res) => {
+  res.json({ received: req.body, timestamp: Date.now() })
 })
 
-// Static files
-app.use(staticFiles("./public"))
-
-app.listen(3000)
-
-// HTTP client
-import { fetch } from "ntl:http"
-val res  = await fetch("https://api.example.com/users")
-val data = await res.json()
+app.listen(3000, () => {
+  log "Server running at http://localhost:3000"
+})
 ```
 
 ### ntl:crypto
 
-Cryptographic utilities built on Node.js `crypto` — no external dependencies.
+Cryptographic utilities: hashing, AES encryption, bcrypt, JWT, UUIDs.
 
 ```ntl
-import crypto from "ntl:crypto"
+val crypto = require("ntl:crypto")
 
-// Password hashing (PBKDF2-based)
-val hashed  = await crypto.bcryptHash("my-password")
-val isValid = await crypto.bcryptVerify("my-password", hashed)
-
-// AES-256-GCM encryption
 val key       = crypto.randomKey()
-val encrypted = crypto.aesEncrypt("sensitive data", key)
+val hashed    = crypto.sha256("Hello from NTL-lang!")
+val token     = crypto.randomHex(32)
+val uid       = crypto.uuid()
+val encrypted = crypto.aesEncrypt("secret", key)
 val decrypted = crypto.aesDecrypt(encrypted, key)
 
-// JWT (HS256)
-val token   = crypto.signJWT({ userId: "123", role: "admin" }, "my-secret", 3600)
-val payload = crypto.verifyJWT(token, "my-secret")
+// Async: bcrypt and JWT
+async fn main() {
+  val stored  = await crypto.bcryptHash("mypassword")
+  val valid   = await crypto.bcryptVerify("mypassword", stored)
 
-// Hashing
-val h1 = crypto.sha256("hello")
-val h2 = crypto.md5("hello")
-val h3 = crypto.sha512("hello")
+  val jwt     = crypto.signJWT({ userId: 42 }, "secret", 3600)
+  val decoded = crypto.verifyJWT(jwt, "secret")
+  log decoded.userId  // 42
+}
 
-// UUID and random
-val id  = crypto.uuid()
-val n   = crypto.randomInt(1, 100)
-val hex = crypto.randomHex(32)
-val b64 = crypto.randomBase64(24)
+main()
 ```
 
 ### ntl:validate
 
-Zod-like schema validation with no external dependencies.
+Schema-based validation for request bodies, config, and user input.
 
 ```ntl
-import { schema } from "ntl:validate"
+val validate = require("ntl:validate")
 
-val userSchema = schema.object({
-  name:  schema.string().min(2).max(50),
-  email: schema.string().email(),
-  age:   schema.number().int().min(0).optional(),
-  role:  schema.enum(["admin", "user", "guest"]).default("user"),
+val UserSchema = validate.object({
+  name:     validate.string().min(2).max(50),
+  email:    validate.string().email(),
+  age:      validate.number().min(0).max(150).optional(),
+  role:     validate.enum(["admin", "user", "guest"]).default("user"),
+  password: validate.string().min(8),
 })
 
-// Throws ValidationError if invalid
-val user = userSchema.parse(input)
+val result = UserSchema.validate({
+  name:     "Alice",
+  email:    "alice@example.com",
+  age:      28,
+  role:     "admin",
+  password: "securepass123",
+})
 
-// Returns { ok, value, errors } — never throws
-val result = userSchema.safeParse(req.body)
-if !result.ok {
-  res.status(400).json({ errors: result.errors })
-  return
+if result.ok {
+  log "Valid:", result.value
+} else {
+  each err in result.errors {
+    log `  - ${err.field}: ${err.message}`
+  }
 }
-val user = result.value  // typed and validated
 ```
-
-**Available schema types:**
-
-| Type                   | Modifiers                                                                |
-|------------------------|--------------------------------------------------------------------------|
-| `schema.string()`      | `.min()` `.max()` `.email()` `.url()` `.uuid()` `.regex()` `.nonempty()` |
-| `schema.number()`      | `.min()` `.max()` `.int()` `.positive()` `.between()` `.finite()`        |
-| `schema.boolean()`     | Coerces `"true"` / `"1"` automatically                                   |
-| `schema.date()`        | `.min()` `.max()` `.past()` `.future()`                                  |
-| `schema.array(item)`   | `.min()` `.max()` `.nonempty()` `.unique()`                              |
-| `schema.object(shape)` | `.strict()` `.partial()` `.pick()` `.omit()` `.extend()`                 |
-| `schema.union(...)`    | First matching schema wins                                               |
-| `schema.enum(values)`  | Must be one of the listed values                                         |
-| `schema.literal(val)`  | Must be exactly this value                                               |
-| `schema.record(k, v)`  | Dictionary with typed keys and values                                    |
-| `schema.any()`         | Accepts any value                                                        |
 
 ### ntl:logger
 
-Structured logging with levels, child loggers, timers, and file output.
+Structured logger with levels, prefixes, and output formats.
 
 ```ntl
-import { createLogger } from "ntl:logger"
+val { Logger } = require("ntl:logger")
 
-val log = createLogger({ name: "app", level: "info" })
+val log = new Logger({ level: "info", prefix: "App" })
 
 log.info("Server started", { port: 3000 })
 log.warn("High memory usage", { rss: process.memoryUsage().rss })
-log.error("Database connection failed", { host: "db.example.com" })
-
-// Child loggers (inherit context)
-val reqLog = log.child({ requestId: req.id, userId: req.user?.id })
-reqLog.info("Processing request")
-
-// Timers
-val timer = log.startTimer("db.query")
-await db.query("SELECT * FROM users")
-timer.done("Query complete", { rows: 500 })
-
-// Log levels: trace, debug, info, warn, error, fatal
-
-// JSON mode for production
-val prodLog = createLogger({
-  name:     "app",
-  level:    "info",
-  pretty:   false,
-  filePath: "logs/app.log",
-})
+log.error("Database error", { message: "connection refused" })
+log.debug("Cache miss for key", { key: "user:42" })
 ```
 
 ### ntl:cache
 
-In-memory LRU cache with TTL, namespaces, and hit-rate statistics.
+In-memory cache with TTL and max-size eviction.
 
 ```ntl
-import { Cache } from "ntl:cache"
+val { Cache } = require("ntl:cache")
 
-val cache = new Cache({ maxSize: 1000, ttl: 60_000 })
+val store = new Cache({ maxSize: 100, ttl: 5000 })
 
-cache.set("user:123", { name: "Alice" })
-val user = cache.get("user:123")
+store.set("user:42", { name: "Alice" })
+val user = store.get("user:42")
+log user.name  // "Alice"
 
-// getOrSet — fetch only if not cached
-val posts = await cache.getOrSet("posts", async () -> {
-  return await db.all("SELECT * FROM posts")
-}, 30_000)
-
-// Namespaces
-val userCache = cache.namespace("user")
-userCache.set("123", userData)
-userCache.get("123")
-userCache.clear()
-
-// Wrap a function with automatic caching
-val cachedGetUser = cache.wrap(getUserById, id -> `user:${id}`, 60_000)
-
-// Stats
-log cache.stats()
-// { size: 42, maxSize: 1000, hits: 900, misses: 100, hitRate: "0.900", evictions: 0 }
+store.delete("user:42")
+log store.size   // 0
 ```
 
 ### ntl:events
 
-Event emitter with wildcards, typed events, and async support.
+EventEmitter — compatible with Node.js `events` module API.
 
 ```ntl
-import { EventEmitter } from "ntl:events"
+val { EventEmitter } = require("ntl:events")
 
-val bus = new EventEmitter({ wildcard: true })
+val bus = new EventEmitter()
 
-bus.on("user:created", (user)        -> log `New user: ${user.name}`)
-bus.on("user:*",       (event, user) -> log `User event: ${event}`)
+bus.on("user:login", (user) => {
+  log `${user.name} logged in`
+})
 
-bus.emit("user:created", { name: "Alice" })
+bus.once("app:start", () => {
+  log "Application started (fires once)"
+})
 
-// Wait for an event (Promise-based)
-val user = await bus.waitFor("user:created", { timeout: 5000 })
-
-// Async emit (returns settled results)
-await bus.emitAsync("notification:send", { to: "alice@example.com" })
+bus.emit("app:start")
+bus.emit("user:login", { id: 1, name: "Alice" })
+log `Listeners on user:login: ${bus.count("user:login")}`
 ```
 
 ### ntl:queue
 
-Job queue with retries, delays, priority, concurrency control, and metrics.
+Background job queue with concurrency control and retries.
 
 ```ntl
-import { createQueue } from "ntl:queue"
+val { createQueue } = require("ntl:queue")
 
-val emailQueue = createQueue("email", {
-  concurrency: 3,
-  retryDelay:  2000,
-})
+val emailQ = createQueue("emails", { concurrency: 5, retryDelay: 5000 })
 
-emailQueue.process(async (job) -> {
-  job.reportProgress(50)
-  await sendEmail(job.data)
+emailQ.process(async (job) => {
+  job.reportProgress(10)
+  // send email...
   job.reportProgress(100)
+  return { sent: true, to: job.data.to }
 })
 
-emailQueue.on("completed", (job, result) -> log `Email sent: ${job.id}`)
-emailQueue.on("failed",    (job, err)    -> log `Failed: ${err.message}`)
-emailQueue.on("progress",  (job, pct)    -> log `Progress: ${pct}%`)
+emailQ.on("completed", (job, r) => log `Email sent to ${r.to}`)
+emailQ.on("failed",    (job, e) => log `Failed: ${e.message}`)
 
-// Add jobs
-emailQueue.add({ to: "alice@example.com", subject: "Welcome!" }, {
-  priority: 10,
-  retries:  3,
-  delay:    1000,
-})
-
-// Bulk add
-emailQueue.addBulk(recipients.map(r -> ({ to: r.email })))
-
-await emailQueue.drain()
-log emailQueue.metrics()
+emailQ.add({ to: "alice@example.com", subject: "Welcome!" }, { retries: 3 })
 ```
 
 ### ntl:ws
 
-WebSocket server with rooms, broadcast, and heartbeat.
+WebSocket server built on top of the HTTP server.
 
 ```ntl
-import { createServer as createWS } from "ntl:ws"
+val { createServer }             = require("ntl:http")
+val { createServer: wsServer }   = require("ntl:ws")
 
-val wss = createWS({ server: http.server })
+val http = createServer()
+val wss  = wsServer({ server: http.server })
 
-wss.on("connection", (ws, req) -> {
-  log `Client connected: ${ws.ip}`
+wss.on("connection", (ws) => {
+  log `User connected: ${ws.id}`
 
-  ws.on("message", (data) -> {
-    val msg = JSON.parse(data)
-    match msg.type {
-      case "join"    -> wss.join(ws, msg.room)
-      case "message" -> wss.to(msg.room).emitJSON({ from: ws.id, text: msg.text })
-      case "leave"   -> wss.leave(ws, msg.room)
-      default        -> ws.sendJSON({ error: "Unknown type" })
-    }
+  ws.on("message", (raw) => {
+    val msg = try? JSON.parse(raw)
+    if msg { wss.broadcast(JSON.stringify({ from: ws.id, text: msg.text })) }
   })
 
-  ws.on("close", () -> log `Client disconnected: ${ws.id}`)
+  ws.on("close", () => log `User disconnected: ${ws.id}`)
 })
 
-wss.broadcastJSON({ type: "announcement", text: "Server restarting soon" })
-wss.to("chat:general").emitJSON({ type: "message", text: "Hello room!" })
+http.listen(4000, () => log "WebSocket server running on port 4000")
 ```
 
 ### ntl:mail
 
-SMTP email client with attachments, HTML/text multipart, and template substitution.
+Email sending via SMTP.
 
 ```ntl
-import { createMailer } from "ntl:mail"
+val { createMailer } = require("ntl:mail")
 
 val mailer = createMailer({
   host: "smtp.example.com",
-  port: 587,
   auth: { user: "user@example.com", pass: "password" },
-  from: "App <noreply@example.com>",
 })
 
 await mailer.send({
   to:      "alice@example.com",
-  subject: "Welcome to our platform",
-  text:    "Thanks for signing up!",
-  html:    "<h1>Welcome!</h1><p>Thanks for signing up.</p>",
-})
-
-// Template substitution
-val html = mailer.template("<h1>Hello, {{name}}!</h1>", { name: "Alice" })
-
-// Attachments
-await mailer.send({
-  to:          "bob@example.com",
-  subject:     "Your report",
-  attachments: [{ filename: "report.pdf", content: reportBuffer }],
+  subject: "Hello from NTL-lang!",
+  html:    "<p>Welcome aboard.</p>",
 })
 ```
 
 ### ntl:env
 
-`.env` file loading, type coercion, and schema-based config validation.
+Environment variable loading and type-safe access.
 
 ```ntl
-import env from "ntl:env"
+val env = require("ntl:env")
 
-env.load()  // loads .env file
+env.load()  // loads .env file if present
 
-val host   = env.get("HOST", "localhost")
 val port   = env.getNumber("PORT", 3000)
-val debug  = env.getBoolean("DEBUG", false)
-val secret = env.require("SESSION_SECRET")
+val debug  = env.getBool("DEBUG", false)
+val apiKey = env.require("API_KEY")  // throws if missing
 
-// Schema-based config
-val config = env.schema({
-  NODE_ENV:     env.field.string().oneOf(["development", "production", "test"]).default("development"),
-  PORT:         env.field.number().min(1024).max(65535).default(3000),
-  DATABASE_URL: env.field.url(),
-  JWT_SECRET:   env.field.string().min(32),
-}).parse()
-
-if env.isDev()  { log "Running in development mode" }
-if env.isProd() { log "Running in production mode" }
+log `Listening on port ${port}`
 ```
 
 ### ntl:db
 
-Built-in SQLite support (no native bindings) and a connection pool factory.
+SQLite database with prepared statements and migrations.
 
 ```ntl
-import { sqlite, createPool } from "ntl:db"
+val { sqlite } = require("ntl:db")
 
-val db = sqlite("data/app.db")
+val db = sqlite(":memory:")
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id    INTEGER PRIMARY KEY,
-    name  TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL
-  )
-`)
+db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT UNIQUE)")
 
-db.prepare("INSERT INTO users (name, email) VALUES (?, ?)").run("Alice", "alice@example.com")
+val stmt   = db.prepare("INSERT INTO users (name, email) VALUES (?, ?)")
+val result = stmt.run("Alice", "alice@example.com")
 
-val user  = db.get("SELECT * FROM users WHERE id = ?", [1])
-val users = db.all("SELECT * FROM users ORDER BY name")
+val users = db.all("SELECT * FROM users")
+each user in users {
+  log user.id, user.name, user.email
+}
 
-// Transactions
-val insertMany = db.transaction((items) -> {
-  for item of items {
-    db.prepare("INSERT INTO users (name, email) VALUES (?, ?)").run(item.name, item.email)
-  }
-})
-insertMany(userList)
-
-// Pool (async interface)
-val pool = createPool({ type: "sqlite", filename: "data/app.db" })
-val rows = await pool.all("SELECT * FROM users WHERE active = ?", [true])
+val one = db.get("SELECT * FROM users WHERE id = ?", [1])
+log one.name  // "Alice"
 ```
 
 ### ntl:fs
@@ -802,99 +660,83 @@ val rows = await pool.all("SELECT * FROM users WHERE active = ?", [true])
 File system utilities with glob, watch, temp files, and path helpers.
 
 ```ntl
-import * as fs from "ntl:fs"
+val fs = require("ntl:fs")
 
-val content = await fs.read("./data.txt")
-await fs.write("./output.txt", "Hello, file!")
+async fn main() {
+  val content = await fs.read("./data.txt")
+  await fs.write("./output.txt", "Hello, file!")
 
-val config = await fs.readJSON("./config.json")
-await fs.writeJSON("./data.json", { key: "value" })
+  val config = await fs.readJSON("./config.json")
+  await fs.writeJSON("./data.json", { key: "value" })
 
-val files = await fs.glob("src/**/*.ntl", { cwd: process.cwd() })
+  val files   = await fs.glob("src/**/*.ntl", { cwd: process.cwd() })
 
-await fs.copy("a.txt", "b.txt")
-await fs.move("old.txt", "new.txt")
-await fs.remove("temp/")
+  await fs.copy("a.txt", "b.txt")
+  await fs.move("old.txt", "new.txt")
+  await fs.remove("temp/")
 
-val entries = await fs.ls("./src")
-entries.filter(e -> e.isFile).forEach(e -> log e.name)
+  val entries = await fs.ls("./src")
+  entries.filter(e => e.isFile).forEach(e => log e.name)
+}
 
-val tmpPath = await fs.tmpFile("temporary content", { ext: ".txt" })
-
-val watcher = fs.watch("./src", { recursive: true })
-watcher.on("change", ({ event, file }) -> log `${event}: ${file}`)
+main()
 ```
 
 ### ntl:test
 
-Built-in test runner with Jest-like assertions.
+Built-in test runner with assertion helpers.
 
 ```ntl
-import { describe, it, expect, mockFn, beforeAll, afterEach } from "ntl:test"
+val { suite, test, run, assert } = require("ntl:test")
 
-describe("User service", () -> {
-  val mockDb = mockFn()
-  mockDb.mockResolvedValue([{ id: 1, name: "Alice" }])
-
-  it("returns a list of users", async () -> {
-    val users = await getUsers(mockDb)
-    expect(users).toHaveLength(1)
-    expect(users[0].name).toBe("Alice")
+suite("String utilities", (s) => {
+  s.test("capitalize first letter", (t) => {
+    fn capitalize(str) {
+      return str[0].toUpperCase() + str.slice(1)
+    }
+    t.equal(capitalize("hello"), "Hello")
+    t.equal(capitalize("world"), "World")
+    t.equal(capitalize("ntl"),   "Ntl")
   })
 
-  it("validates email format", () -> {
-    expect(() -> validateEmail("not-an-email")).toThrow("invalid email")
-    expect(validateEmail("alice@example.com")).toBe(true)
-  })
-
-  it("calculates totals", () -> {
-    expect(sum(1, 2, 3)).toBe(6)
-    expect(sum()).toBe(0)
-    expect(result.value).toBeCloseTo(3.14, 2)
-    expect(["a", "b"]).toContain("a")
-    expect({ id: 1 }).toMatchObject({ id: 1 })
+  s.test("reverse a string", (t) => {
+    fn reverse(str) {
+      return str.split("").reverse().join("")
+    }
+    t.equal(reverse("hello"), "olleh")
+    t.equal(reverse(""),      "")
   })
 })
+
+run()
 ```
 
 Run tests:
 
 ```bash
 ntl test
-ntl test --file user.test.ntl
-ntl test --filter "User service"
+ntl run tests/all.ntl
 ```
 
 ### ntl:ai
 
-Connect to OpenAI, Anthropic, Ollama, or any OpenAI-compatible endpoint.
+Connect to OpenAI, Anthropic Claude, Ollama, or any OpenAI-compatible API.
 
 ```ntl
-import { openai, anthropic, ollama, system, user, messages } from "ntl:ai"
+val { openai, anthropic, ollama } = require("ntl:ai")
 
-// OpenAI (reads OPENAI_API_KEY automatically)
-val gpt = openai({ model: "gpt-4o" })
-
+// OpenAI — reads OPENAI_API_KEY automatically
+val gpt   = openai({ model: "gpt-4o" })
 val reply = await gpt.complete("What is the capital of France?")
 
-val res = await gpt.chat({
-  messages: [
-    system("You are a helpful assistant."),
-    user("Explain WebSockets in one paragraph."),
-  ],
-})
-
 // Streaming
-val stream = gpt.stream({ messages: messages("Write a poem about JavaScript") })
-stream.on("chunk", (text) -> process.stdout.write(text))
-stream.on("done",  (full) -> log `\n\nTotal: ${full.length} chars`)
-
-// Embeddings
-val embedding = await gpt.embed("NTL is a compiled language")
+val stream = gpt.stream({ messages: [{ role: "user", content: "Write a short poem" }] })
+stream.on("chunk", (text) => process.stdout.write(text))
+stream.on("done",  (full) => log `\nTotal: ${full.length} chars`)
 
 // Anthropic Claude
-val claude = anthropic({ model: "claude-3-5-sonnet-20241022" })
-val reply2 = await claude.complete("What is TypeScript?", { system: "Be concise." })
+val claude  = anthropic({ model: "claude-sonnet-4-6" })
+val reply2  = await claude.complete("What is TypeScript?", { system: "Be concise." })
 
 // Local Ollama
 val llama  = ollama({ model: "llama3" })
@@ -906,7 +748,7 @@ val models = await llama.models()
 
 ## Module Manager: nax
 
-`nax` is NTL's module manager. It installs, removes, lists, and publishes NTL modules.
+`nax` is NTL-lang's module manager. It installs, removes, lists, and publishes NTL-lang modules.
 
 ```bash
 nax install ntl-router            # install a module
@@ -930,7 +772,7 @@ nax logout                        # log out
 {
   "name": "my-ntl-app",
   "version": "1.0.0",
-  "description": "My NTL application",
+  "description": "My NTL-lang application",
   "author": "Your Name",
   "license": "MIT",
   "main": "main.ntl",
@@ -953,7 +795,7 @@ nax logout                        # log out
 
 ## Compiler Pipeline
 
-NTL compiles source code through six stages:
+NTL-lang compiles source code through six stages:
 
 ```
 Source (.ntl)
@@ -971,7 +813,7 @@ Source (.ntl)
   Transforms  — syntax sugar, macro expansion, optimizations
      |
      v
-  Codegen     — emits JavaScript (ESM or CJS)
+  Codegen     — emits JavaScript (CommonJS by default)
      |
      v
 Output (.js)
@@ -984,8 +826,8 @@ ntl run   app.ntl              # run a source file directly
 ntl run   app.ntl --watch      # re-run on file changes
 ntl run   app.ntl --debug      # verbose compiler output
 ntl build app.ntl --out dist/  # compile to JavaScript
-ntl build app.ntl --target esm # ES modules output
-ntl build app.ntl --target cjs # CommonJS output
+ntl build app.ntl --target esm # ES modules output (browser/Deno)
+ntl build app.ntl --target cjs # CommonJS output (Node.js, default)
 ntl build app.ntl --minify     # minified output
 ntl build app.ntl --bundle     # single-file bundle
 ntl check app.ntl              # type check only, no output
@@ -995,11 +837,29 @@ ntl test                       # run the test suite
 ntl repl                       # interactive REPL
 ```
 
+### Selective Embedding
+
+When you bundle or build a file that imports local `.ntl` modules, NTL-lang automatically performs **selective embedding** — only the functions and variables that your code actually calls are included in the output. This keeps compiled bundles small.
+
+```ntl
+// main.ntl — only uses math.add and math.multiply
+val math = require("./math.ntl")
+
+log math.add(3, 4)
+log math.multiply(6, 7)
+```
+
+The compiled output will embed only `add` and `multiply` from `math.ntl`, even if that module exports many other functions. You can disable this with:
+
+```bash
+ntl build app.ntl --no-treeshake
+```
+
 ---
 
 ## Configuration
 
-NTL reads configuration from the `config/` directory. All files are optional — NTL works with zero configuration out of the box.
+NTL-lang reads configuration from the `config/` directory. All files are optional — NTL-lang works with zero configuration out of the box.
 
 ### config/compiler.yaml
 
@@ -1023,7 +883,7 @@ features:
 Extends the lexer's keyword list. Keywords are organized by category and loaded automatically.
 
 ```yaml
-version: "3.5.2"
+version: "4.1.0"
 keywords:
   declarations:
     - var
@@ -1066,35 +926,124 @@ Customize error message templates. Useful for localization.
 
 ## Examples
 
-### REST API Server
+All examples are in the `examples/` directory and are runnable with `ntl run`.
+
+### Hello World
+
+```bash
+ntl run examples/01_hello_world.ntl
+```
 
 ```ntl
-import { createServer, Router, json, cors, rateLimit } from "ntl:http"
-import { schema }                                        from "ntl:validate"
-import { createLogger }                                  from "ntl:logger"
-import { Cache }                                         from "ntl:cache"
-import { sqlite }                                        from "ntl:db"
-import env                                               from "ntl:env"
+fn greet(name: string) -> string {
+  return `Hello, ${name}!`
+}
+
+val message = greet("World")
+log message
+
+val names = ["Alice", "Bob", "Charlie"]
+each name in names {
+  log greet(name)
+}
+```
+
+### Classes and Inheritance
+
+```bash
+ntl run examples/02_classes.ntl
+```
+
+### Async / Await
+
+```bash
+ntl run examples/03_async.ntl
+```
+
+### Pattern Matching
+
+```bash
+ntl run examples/04_pattern_matching.ntl
+```
+
+### Crypto Module
+
+```bash
+ntl run examples/05_modules.ntl
+```
+
+### Multi-file Project (with selective embed)
+
+```bash
+ntl run examples/06_multi_file/main.ntl
+# or run the pre-compiled version directly:
+node examples/06_multi_file/main.js
+```
+
+### HTTP Server
+
+```bash
+ntl run examples/07_http_server.ntl
+# then: curl http://localhost:3000
+```
+
+### Validation
+
+```bash
+ntl run examples/08_validate.ntl
+```
+
+### Events
+
+```bash
+ntl run examples/09_events.ntl
+```
+
+### Language Features
+
+```bash
+ntl run examples/10_language_features.ntl
+```
+
+### Cache + Logger
+
+```bash
+ntl run examples/11_cache_logger.ntl
+```
+
+### Test Runner
+
+```bash
+ntl run examples/12_test_runner.ntl
+```
+
+---
+
+### Full REST API Example
+
+```ntl
+val http     = require("ntl:http")
+val validate = require("ntl:validate")
+val { Logger } = require("ntl:logger")
+val { Cache }  = require("ntl:cache")
+val { sqlite } = require("ntl:db")
+val env        = require("ntl:env")
 
 env.load()
 
-val log   = createLogger({ name: "api" })
+val log   = new Logger({ name: "api" })
 val db    = sqlite(env.get("DB_PATH", ":memory:"))
-val cache = new Cache({ maxSize: 500, ttl: 30_000 })
-val app   = createServer()
+val cache = new Cache({ maxSize: 500, ttl: 30000 })
+val app   = http.createServer()
 
 db.exec("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE)")
 
-val userSchema = schema.object({
-  name:  schema.string().min(2).max(100),
-  email: schema.string().email(),
+val userSchema = validate.object({
+  name:  validate.string().min(2).max(100),
+  email: validate.string().email(),
 })
 
-app.use(json())
-app.use(cors())
-app.use(rateLimit({ windowMs: 60_000, max: 100 }))
-
-app.get("/users", (req, res) -> {
+app.get("/users", (req, res) => {
   val cached = cache.get("users:all")
   if cached { res.json(cached); return }
   val rows = db.all("SELECT * FROM users ORDER BY name")
@@ -1102,157 +1051,28 @@ app.get("/users", (req, res) -> {
   res.json(rows)
 })
 
-app.get("/users/:id", (req, res) -> {
+app.get("/users/:id", (req, res) => {
   val user = db.get("SELECT * FROM users WHERE id = ?", [req.params.id])
   if !user { res.status(404).json({ error: "User not found" }); return }
   res.json(user)
 })
 
-app.post("/users", (req, res) -> {
-  val r = userSchema.safeParse(req.body)
+app.post("/users", (req, res) => {
+  val r = userSchema.validate(req.body)
   if !r.ok { res.status(400).json({ errors: r.errors }); return }
   val result = db.prepare("INSERT INTO users (name, email) VALUES (?, ?)").run(r.value.name, r.value.email)
   cache.delete("users:all")
   res.status(201).json({ id: result.lastInsertRowid, ...r.value })
 })
 
-app.listen(env.getNumber("PORT", 3000), () -> log.info("API running", { port: 3000 }))
-```
-
-### WebSocket Chat Server
-
-```ntl
-import { createServer }             from "ntl:http"
-import { createServer as wsServer } from "ntl:ws"
-import { createLogger }             from "ntl:logger"
-
-val log  = createLogger({ name: "chat" })
-val http = createServer()
-val wss  = wsServer({ server: http.server })
-
-wss.on("connection", (ws) -> {
-  log.info("User connected", { id: ws.id })
-
-  ws.on("message", (raw) -> {
-    try {
-      val msg = JSON.parse(raw)
-      match msg.type {
-        case "join" -> {
-          wss.join(ws, msg.room)
-          ws.set("name", msg.name)
-          ws.set("room", msg.room)
-          wss.to(msg.room).emitJSON({ type: "system", text: `${msg.name} joined` })
-        }
-        case "message" -> {
-          val room = ws.get("room")
-          val name = ws.get("name")
-          if room { wss.to(room).emitJSON({ type: "message", from: name, text: msg.text }) }
-        }
-        case "leave" -> {
-          val room = ws.get("room")
-          val name = ws.get("name")
-          if room { wss.leave(ws, room); wss.to(room).emitJSON({ type: "system", text: `${name} left` }) }
-        }
-      }
-    } catch e {
-      log.warn("Invalid message", { error: e.message })
-    }
-  })
-
-  ws.on("close", () -> log.info("User disconnected", { id: ws.id }))
-})
-
-http.listen(4000)
-log.info("Chat server running on port 4000")
-```
-
-### Background Job Queue
-
-```ntl
-import { createQueue }  from "ntl:queue"
-import { createMailer } from "ntl:mail"
-import { createLogger } from "ntl:logger"
-import env              from "ntl:env"
-
-env.load()
-
-val log    = createLogger({ name: "jobs" })
-val mailer = createMailer({
-  host: env.require("SMTP_HOST"),
-  auth: { user: env.require("SMTP_USER"), pass: env.require("SMTP_PASS") },
-})
-
-val emailQ  = createQueue("emails",  { concurrency: 5, retryDelay: 5000 })
-val reportQ = createQueue("reports", { concurrency: 1 })
-
-emailQ.process(async (job) -> {
-  job.reportProgress(10)
-  await mailer.send(job.data)
-  job.reportProgress(100)
-  return { sent: true, to: job.data.to }
-})
-
-emailQ.on("completed", (job, r) -> log.info("Email sent",   { to: r.to }))
-emailQ.on("failed",    (job, e) -> log.error("Email failed", { error: e.message, attempts: job.attempts }))
-
-reportQ.process(async (job) -> {
-  val data = await gatherReportData(job.data.reportId)
-  await emailQ.add({ to: job.data.email, subject: "Your Report", attachments: [{ filename: "report.pdf", content: data }] })
-})
-
-emailQ.add({ to: "alice@example.com", subject: "Welcome!" }, { retries: 3 })
-reportQ.add({ reportId: "monthly-2026-04", email: "cfo@company.com" }, { priority: 10 })
-
-log.info("Queues running", emailQ.metrics())
-```
-
-### AI-Powered API
-
-```ntl
-import { createServer, json } from "ntl:http"
-import { openai }             from "ntl:ai"
-import { schema }             from "ntl:validate"
-import env                    from "ntl:env"
-
-env.load()
-
-val gpt = openai({ model: "gpt-4o" })
-val app = createServer()
-
-app.use(json())
-
-val promptSchema = schema.object({
-  prompt: schema.string().min(1).max(4000),
-  system: schema.string().max(2000).optional(),
-  stream: schema.boolean().default(false),
-})
-
-app.post("/chat", async (req, res) -> {
-  val r = promptSchema.safeParse(req.body)
-  if !r.ok { res.status(400).json({ errors: r.errors }); return }
-
-  val { prompt, system, stream } = r.value
-
-  if stream {
-    res.setHeader("Content-Type", "text/event-stream")
-    val s = gpt.stream({ messages: [{ role: "user", content: prompt }] })
-    s.on("chunk", (text) -> res.write(`data: ${JSON.stringify({ text })}\n\n`))
-    s.on("done",  ()     -> { res.write("data: [DONE]\n\n"); res.end() })
-    s.on("error", (e)    -> { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); res.end() })
-  } else {
-    val reply = await gpt.complete(prompt, { system })
-    res.json({ reply })
-  }
-})
-
-app.listen(env.getNumber("PORT", 3000))
+app.listen(env.getNumber("PORT", 3000), () => log.info("API running", { port: 3000 }))
 ```
 
 ---
 
 ## Deployment
 
-NTL integrates cleanly into existing Node.js infrastructure. You can migrate gradually — NTL files run alongside your existing JavaScript code without any special setup.
+NTL-lang integrates cleanly into existing Node.js infrastructure.
 
 ### Production
 
@@ -1261,7 +1081,7 @@ NTL integrates cleanly into existing Node.js infrastructure. You can migrate gra
 ntl build src/main.ntl --out dist/ --target cjs
 node dist/main.js
 
-# Or run NTL files directly with the runtime
+# Or run NTL-lang files directly with the runtime
 node main.js run src/app.ntl
 ```
 
@@ -1271,24 +1091,20 @@ node main.js run src/app.ntl
 FROM node:20-slim
 WORKDIR /app
 COPY . .
-# No npm install required for standard NTL apps
+# No npm install required for standard NTL-lang apps
 CMD ["node", "main.js", "run", "src/app.ntl"]
 ```
 
 ### Using npm packages
 
-NTL works with every npm package. Import them the same way you would in Node.js:
+NTL-lang works with every npm package. Import them the same way you would in Node.js:
 
 ```ntl
-import express          from "express"
-import { z }            from "zod"
-import Stripe           from "stripe"
-import { Kysely }       from "kysely"
-import { Redis }        from "ioredis"
-import { PrismaClient } from "@prisma/client"
-
-// CommonJS packages work too
-const knex = require("knex")
+val express        = require("express")
+val { z }          = require("zod")
+val Stripe         = require("stripe")
+val { PrismaClient } = require("@prisma/client")
+val knex           = require("knex")
 ```
 
 ### CI/CD

@@ -37,7 +37,9 @@ function cmdRun(ctx) {
 
 /**
  * `ntl build <file.ntl|ntl.yaml> [-o output.js]` — compiles to JavaScript.
- * Also supports `--reverse` to decompile JS back to NTL.
+ * Supports `--reverse` to decompile JS back to NTL.
+ * Supports `--embed` to inline only the used parts of each imported module
+ * directly into the output file (no external require() calls at runtime).
  * @param {CLIContext} ctx
  */
 function cmdBuild(ctx) {
@@ -73,10 +75,164 @@ function cmdBuild(ctx) {
     return;
   }
 
+  if (flags.embed) {
+    _cmdBuildEmbed(ctx);
+    return;
+  }
+
   const outFile = flags.out || flags.o || (fileArg.endsWith('.ntl') ? fileArg.replace(/\.ntl$/, '.js') : 'output.js');
 
   process.stdout.write('\n');
   compileAndWrite(fileArg, outFile, buildOpts());
+}
+
+/**
+ * Implementation of `ntl build --embed`.
+ * Compiles the entry file, then for every `require('ntl:...')` or relative
+ * require found in the compiled output, loads the module source, compiles it,
+ * detects which exports are actually used by the caller, strips the rest, and
+ * inlines the result as an IIFE at the top of the output — replacing the
+ * original require() call with a reference to the already-inlined binding.
+ *
+ * Result: a fully self-contained JS file with zero external ntl: requires.
+ * @param {CLIContext} ctx
+ */
+function _cmdBuildEmbed(ctx) {
+  const { positional, flags, die, ok, info, buildOpts, colors, NTL_DIR } = ctx;
+  const { CYAN, GRAY } = colors;
+
+  const fileArg = positional[1];
+  const outFile = flags.out || flags.o || (fileArg.endsWith('.ntl') ? fileArg.replace(/\.ntl$/, '.js') : 'output.js');
+  const opts    = buildOpts();
+
+  // Determine whether the final output should be ESM
+  const isESM = opts.target === 'esm' || opts.target === 'browser' || opts.target === 'deno';
+
+  const { Compiler }                       = require(path.join(NTL_DIR, 'src/compiler'));
+  const { selectiveWrap, detectUsedNames } = require(path.join(NTL_DIR, 'src/runtime/selective_embed'));
+  const MODULES_DIR                        = path.join(NTL_DIR, 'modules');
+
+  // ── Step 1: compile user code with the REAL target ─────────────────────────
+  // For ESM targets, genImport now emits native `import` statements directly,
+  // so we compile with opts.target (esm/browser/deno/node) as-is.
+  // We no longer force CJS first — that was the source of the _toESM pollution bug.
+  const compiler = new Compiler(opts);
+  const source   = fs.readFileSync(fileArg, 'utf-8');
+  const result   = compiler.compileSource(source, path.resolve(fileArg), opts);
+
+  if (!result.success) {
+    for (const e of result.errors) process.stderr.write(e.message + '\n');
+    process.exit(1);
+  }
+
+  let mainCode = result.code;
+
+  // ── Step 2: find and embed ntl: modules ────────────────────────────────────
+  // Match BOTH forms:
+  //   ESM:  import { X } from "ntl:mod"
+  //   CJS:  const { X } = require('ntl:mod')
+  const importRe  = /^import\s+(\{[^}]+\}|\w+)\s+from\s+["']ntl:(\w+)["'];?[ \t]*/gm;
+  const requireRe = /(?:const|let|var)\s+(\{[^}]+\}|\w+)\s*=\s*require\(["']ntl:(\w+)["']\);?/g;
+
+  const embeds = [];
+  let m;
+
+  while ((m = importRe.exec(mainCode)) !== null) {
+    embeds.push({ fullMatch: m[0], binding: m[1].trim(), modName: m[2] });
+  }
+  while ((m = requireRe.exec(mainCode)) !== null) {
+    embeds.push({ fullMatch: m[0], binding: m[1].trim(), modName: m[2] });
+  }
+
+  if (embeds.length === 0) {
+    info('No ntl: modules found \u2014 nothing to embed. Writing plain build.');
+  }
+
+  const preambleChunks = [];
+  const embedLog = [];
+
+  for (const { fullMatch, binding, modName } of embeds) {
+    const jsPath = path.join(MODULES_DIR, modName + '.js');
+    if (!fs.existsSync(jsPath)) {
+      info(`  skipped ntl:${modName} \u2014 no prebuilt JS found, keeping import`);
+      continue;
+    }
+
+    const modSource = fs.readFileSync(jsPath, 'utf-8');
+
+    // Detect which exported names the caller actually uses
+    let usedNames = null;
+    const isDestructured = binding.startsWith('{');
+    if (isDestructured) {
+      usedNames = new Set(
+        binding.slice(1, -1).split(',').map(s => s.trim().split(':')[0].trim()).filter(Boolean)
+      );
+    } else {
+      usedNames = detectUsedNames(mainCode, binding);
+    }
+
+    const iife     = selectiveWrap(modSource, usedNames, jsPath);
+    const varName  = `__ntl_embed_${modName}__`;
+    const usedList = usedNames ? [...usedNames].join(', ') : '(all)';
+
+    // Replace import/require line with a reference to the IIFE variable
+    mainCode = mainCode.replace(fullMatch, `const ${binding} = ${varName};\n`);
+    preambleChunks.push(`const ${varName} = ${iife};`);
+    embedLog.push({ modName, usedList });
+  }
+
+  // Also embed relative .ntl requires
+  const relRe = /require\(['"](\.[^'"]+\.ntl)['"]\)/g;
+  const relEmbeds = [];
+  while ((m = relRe.exec(mainCode)) !== null) {
+    relEmbeds.push({ fullMatch: m[0], relPath: m[1] });
+  }
+  // Relative deps always compile to CJS so selectiveWrap can process them
+  const cjsOpts     = Object.assign({}, opts, { target: 'node' });
+  const cjsCompiler = new Compiler(cjsOpts);
+  for (const { fullMatch, relPath } of relEmbeds) {
+    const absPath = path.resolve(path.dirname(path.resolve(fileArg)), relPath);
+    if (!fs.existsSync(absPath)) continue;
+    const depSrc    = fs.readFileSync(absPath, 'utf-8');
+    const depResult = cjsCompiler.compileSource(depSrc, absPath, cjsOpts);
+    if (!depResult.success) continue;
+    const iife    = selectiveWrap(depResult.code, null, absPath);
+    const varName = '__ntl_embed_rel_' + absPath.replace(/[^a-zA-Z0-9]/g, '_') + '__';
+    preambleChunks.push(`const ${varName} = ${iife};`);
+    mainCode = mainCode.replace(fullMatch, varName);
+    embedLog.push({ modName: relPath, usedList: '(all)' });
+  }
+
+  // ── Step 3: assemble the bundle ────────────────────────────────────────────
+  // The IIFEs use module.exports internally — they are self-contained CJS blobs.
+  // The user's mainCode already has the right format (native ESM or CJS).
+  // We intentionally do NOT call _toESM here: that function would hoist the
+  // require('fs'/'path'/etc.) calls from inside the IIFEs to the top as ESM
+  // imports, breaking the output. The IIFEs are valid JS in both ESM and CJS
+  // files since they use no top-level import/export syntax.
+  let finalCode = [
+    '// Generated by ntl build --embed',
+    '// Embedded modules: ' + (embedLog.length ? embedLog.map(e => `ntl:${e.modName}`).join(', ') : 'none'),
+    '',
+    ...preambleChunks,
+    '',
+    mainCode,
+  ].join('\n');
+
+  fs.mkdirSync(path.dirname(path.resolve(outFile)), { recursive: true });
+  fs.writeFileSync(outFile, finalCode, 'utf-8');
+
+  process.stdout.write('\n');
+  const modeLabel = isESM ? '(embed · esm)' : '(embed)';
+  ok(`${path.relative('.', fileArg)}  ${GRAY('→')}  ${CYAN(outFile)}  ${GRAY(modeLabel)}`);
+
+  for (const { modName, usedList } of embedLog) {
+    info(`  embedded ntl:${modName}  ${GRAY('used: ' + usedList)}`);
+  }
+
+  const kb = (finalCode.length / 1024).toFixed(1);
+  info(`  total size: ${GRAY(kb + ' KB')}`);
+  process.stdout.write('\n');
 }
 
 

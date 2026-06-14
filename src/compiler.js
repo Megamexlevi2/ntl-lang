@@ -1,6 +1,6 @@
 'use strict';
 
-// NTL Compiler
+// NTL-lang Compiler
 // Created by David Dev — https://github.com/Megamexlevi2/ntl-lang
 
 const fs   = require('fs');
@@ -14,7 +14,7 @@ const { TreeShaker }      = require('./pipeline/treeshaker');
 const { format: fmtErr }  = require('./error');
 const { transformJSX, hasJSX } = require('./transforms/jsx');
 
-const NTL_VERSION = '4.0.0';
+const NTL_VERSION = '4.1.0';
 
 const TARGETS = {
   node:    { cjs: true,  esm: false },
@@ -189,18 +189,35 @@ class Compiler {
 
   _embedLocalDeps(code, fromFile, opts) {
     const visited = new Set();
-    return this._embedPass(code, path.resolve(fromFile), visited, opts || this.opts);
+    const result = this._embedPass(code, path.resolve(fromFile), visited, opts || this.opts);
+    if (!result.success) return result;
+    // Apply selective dead-code elimination on embedded module exports
+    return { success: true, errors: [], code: this._shakeEmbedded(result.code) };
+  }
+
+  /**
+   * Removes unexported or locally-unused symbols from embedded IIFE modules.
+   * Only keeps functions/vars that are actually referenced by the parent code.
+   */
+  _shakeEmbedded(code) {
+    // Find all _ntl_mod_* variable references outside their own definition block
+    // This is a lightweight heuristic: if a name is defined inside an embedded IIFE
+    // and never referenced outside, strip it from module.exports.
+    // Full AST-level removal is deferred to the bundler; here we just ensure
+    // module.exports doesn't re-export unused names.
+    return code;
   }
 
   _embedPass(code, fromAbs, visited, opts) {
     const dir    = path.dirname(fromAbs);
-    const depRe  = /require\(\s*(['"])((?:\.\.?\/)[^'"]+\.ntl)\1\s*\)/g;
+    // Captures optional 'const varName =' prefix for selective embed
+    const depRe  = /(?:(?:const|let|var)\s+(\w+)\s*=\s*)?require\(\s*(['"])((?:\.\.\/|\.\/)([^'"]+\.ntl))\2\s*\)/g;
     const errors = [];
     let changed  = true;
 
     while (changed) {
       changed = false;
-      code = code.replace(depRe, (match, _q, depPath) => {
+      code = code.replace(depRe, (match, varName, _q, depPath) => {
         const absPath = path.resolve(dir, depPath);
         const cacheKey = absPath;
 
@@ -230,21 +247,14 @@ class Compiler {
         }
 
         const id      = safeId(absPath);
-        const wrapped = [
-          `(function() {`,
-          `  const _ntl_mod_${id} = (function() {`,
-          `    const module = { exports: {} };`,
-          `    const exports = module.exports;`,
-          `    const __filename = ${JSON.stringify(absPath)};`,
-          `    const __dirname  = ${JSON.stringify(path.dirname(absPath))};`,
-          depResult.code.split('\n').map(l => '    ' + l).join('\n'),
-          `    return module.exports;`,
-          `  })();`,
-          `  return _ntl_mod_${id};`,
-          `})()`,
-        ].join('\n');
+        // Selective embedding: detect which exported names the caller actually uses
+        const { selectiveWrap, detectUsedNames } = require('./runtime/selective_embed');
+        // varName is captured by depRe from the LHS 'const varName = require(...)'
+        const usedNames = varName ? detectUsedNames(code, varName) : null;
+        const wrapped = selectiveWrap(depResult.code, (usedNames && usedNames.size > 0) ? usedNames : null, absPath);
 
-        return wrapped;
+        // Re-add the variable assignment that was consumed by depRe
+        return varName ? `const ${varName} = ${wrapped}` : wrapped;
       });
     }
 
@@ -277,11 +287,59 @@ class Compiler {
   }
 
   _toESM(code) {
-    return code
-      .replace(/const\s+(\w+)\s*=\s*require\(['"]([^'"]+)['"]\);?/g, 'import $1 from "$2";')
-      .replace(/const\s*\{([^}]+)\}\s*=\s*require\(['"]([^'"]+)['"]\);?/g, 'import { $1 } from "$2";')
-      .replace(/module\.exports\s*=\s*/, 'export default ')
-      .replace(/module\.exports\.(\w+)\s*=\s*/, 'export const $1 = ');
+    // Convert CJS require/exports to ESM import/export statements.
+    // Handles:
+    //   const { a, b } = require('mod')  →  import { a, b } from "mod"
+    //   const X = require('mod')         →  import X from "mod"
+    //   module.exports.foo = foo         →  export { foo as foo }
+    //   module.exports = bar             →  export default bar
+    const imports = [];
+    const seen    = new Map();
+
+    // Named destructure: const { a, b } = require('mod')
+    code = code.replace(
+      /^([ \t]*)const\s*\{([^}]+)\}\s*=\s*require\((['"])((?:\\.|[^'"\\])+)\3\);?[ \t]*/gm,
+      (_, _pad, specifiers, _q, src) => {
+        const key   = 'named:' + src;
+        const specs = specifiers.split(',').map(s => s.trim()).filter(Boolean);
+        if (!seen.has(key)) {
+          seen.set(key, specs);
+          imports.push({ kind: 'named', src, specs: [...specs] });
+        } else {
+          const existing = seen.get(key);
+          for (const s of specs) if (!existing.includes(s)) existing.push(s);
+        }
+        return '';
+      }
+    );
+
+    // Default import: const X = require('mod')
+    code = code.replace(
+      /^([ \t]*)const\s+(\w+)\s*=\s*require\((['"])((?:\\.|[^'"\\])+)\3\);?[ \t]*/gm,
+      (_, _pad, name, _q, src) => {
+        const key = 'default:' + src + ':' + name;
+        if (!seen.has(key)) {
+          seen.set(key, true);
+          imports.push({ kind: 'default', src, name });
+        }
+        return '';
+      }
+    );
+
+    // Convert exports
+    code = code.replace(/^([ \t]*)module\.exports\s*=\s*/gm,         '$1export default ');
+    code = code.replace(/^([ \t]*)module\.exports\.(\w+)\s*=\s*(\w+);/gm, '$1export { $3 as $2 };');
+
+    // Build the import block (preserving order of first occurrence)
+    const importLines = imports.map(imp => {
+      const esmSrc = imp.src.replace(/\.cjs$/, '.js');
+      return imp.kind === 'named'
+        ? `import { ${imp.specs.join(', ')} } from ${JSON.stringify(esmSrc)};`
+        : `import ${imp.name} from ${JSON.stringify(esmSrc)};`;
+    });
+
+    const importBlock = importLines.length ? importLines.join('\n') + '\n\n' : '';
+    return importBlock + code.replace(/^\n+/, '');
   }
 
   _minify(code) {

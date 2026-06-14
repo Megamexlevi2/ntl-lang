@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// NTL — Node Transpiled Language
+// NTL-lang — A compiled backend language that transpiles to JavaScript
 // Created by David Dev
 // GitHub: https://github.com/Megamexlevi2/ntl-lang
 // (c) David Dev 2026. Apache-2.0 License.
@@ -59,28 +59,87 @@ const inlineCode = flags.e || flags.eval || null;
 const cmd        = inlineCode ? '__eval__' : positional[0];
 
 const HELP = `
-${BOLD(CYAN('NTL') + ' v' + NTL_VERSION)} ${GRAY('— Crafting the backend, transpiled to JavaScript')}
+${BOLD(CYAN('NTL-lang') + ' v' + NTL_VERSION)} ${GRAY('— Crafting the backend, transpiled to JavaScript')}
 
 ${BOLD('⚡ QUICK START')}
   ${CYAN('ntl run app.ntl')}          Launch your application
   ${CYAN('ntl init')}                 Start a fresh project
   ${CYAN('ntl -e "log 5 + 5"')}       Quick math in the terminal
 
-${BOLD('🛠️ CORE COMMANDS')}
-  ${GREEN('run')}      <file>          Execute an NTL script
-  ${GREEN('build')}    <input>         Compile to production-ready JS
-  ${GREEN('bundle')}   <input>         Merge everything into a single file
-  ${GREEN('check')}    <file>          Verify types and logic (no execution)
-  ${GREEN('watch')}    <file>          Auto-recompile on every save
-  ${GREEN('dev')}      [dir]           Fire up the dev server with hot-reload
-  ${GREEN('fmt')}      <file>          Make your code look beautiful
-  ${GREEN('repl')}                     Jump into the interactive shell
-  ${GREEN('nax')}      <cmd>           Manage modules (your package companion)
+${BOLD('🛠️  CORE COMMANDS')}
 
-${BOLD('📚 RESOURCES')}
-  ${GREEN('documentation')}            Download the full README to your current folder
-  ${GREEN('version')}                  Check what version you're running
-  ${GREEN('help')}                     You're looking at it!
+  ${GREEN('run')} <file.ntl>
+    Execute an NTL script directly.
+    ${GRAY('--profile')}              Run with JIT profiling enabled
+    ${GRAY('--jit-report')}          Print a JIT optimization report after execution
+    ${GRAY('--no-optimize')}         Disable JIT optimizations
+    ${GRAY('-v, --verbose')}         Verbose output
+
+  ${GREEN('build')} <file.ntl|ntl.yaml>
+    Compile NTL source to production-ready JavaScript.
+    ${GRAY('-o, --out <file>')}      Output file path (default: same name, .js)
+    ${GRAY('--embed')}               Inline only the used parts of each imported
+    ${GRAY('                 ')}     module directly into the output — no external
+    ${GRAY('                 ')}     ntl: require() calls at runtime
+    ${GRAY('--reverse, -r')}         Decompile a .js file back to NTL source
+    ${GRAY('--target <t>')}          Target platform: node (default), browser, bun, esm, cjs
+    ${GRAY('--esm')}                 Shorthand for --target esm (emit ES module output)
+    ${GRAY('--cjs')}                 Shorthand for --target cjs (emit CommonJS output)
+    ${GRAY('--minify')}              Minify the output
+    ${GRAY('--obfuscate')}           Obfuscate the compiled output
+    ${GRAY('--no-treeshake')}        Disable tree-shaking
+    ${GRAY('--strict')}              Enable strict type checking during build
+    ${GRAY('--type-check')}          Run the type checker (alias: --check)
+    ${GRAY('--source-map')}          Emit a source map alongside the output
+    ${GRAY('--incremental')}         Skip files that have not changed
+    ${GRAY('--jsx')}                 Enable JSX transform
+    ${GRAY('--jsx-pragma <fn>')}     JSX factory function (default: React.createElement)
+    ${GRAY('--jsx-frag <fn>')}       JSX fragment factory (default: React.Fragment)
+    ${GRAY('--jsx-import none')}     Disable automatic JSX import
+    ${GRAY('--comments')}            Preserve comments in the output
+    ${GRAY('--credits')}             Emit NTL credit comment at top of output
+    ${GRAY('--arch <arch>')}         Target architecture hint (x64, arm64, …)
+
+  ${GREEN('bundle')} <file.ntl|dir>
+    Merge your project and all its imports into a single JS file.
+    ${GRAY('-o, --out <file>')}      Output file (default: dist/bundle.js)
+    ${GRAY('(accepts same build flags: --target, --minify, --obfuscate, …)')}
+
+  ${GREEN('check')} <file.ntl>
+    Verify types and logic without executing anything.
+    ${GRAY('--strict')}              Treat warnings as errors
+
+  ${GREEN('watch')} <file.ntl>
+    Auto-recompile on every save.
+    ${GRAY('-o, --out <file>')}      Output file to update on each change
+
+  ${GREEN('dev')} [dir]
+    Fire up the dev server with hot-reload on file changes.
+    ${GRAY('-p, --port <n>')}        Port to listen on (default: 3000)
+
+  ${GREEN('fmt')} <file.ntl>
+    Auto-format NTL source code in-place.
+    ${GRAY('--check')}               Exit with error if the file is not already formatted
+
+  ${GREEN('repl')}
+    Jump into the interactive NTL shell.
+
+  ${GREEN('nax')} <sub-command>
+    Manage modules — your package companion.
+    ${GRAY('install <url>')}         Install a module from github.com/user/repo
+    ${GRAY('list')}                  List all installed modules
+    ${GRAY('clear')}                 Clear the module cache
+    ${GRAY('new')}                   Scaffold a new module.json interactively
+    ${GRAY('info <name>')}           Show details for an installed module
+
+${BOLD('📚 UTILITIES')}
+  ${GREEN('documentation')}          Download the full README to your current folder
+  ${GREEN('version')}               Print the installed NTL version
+  ${GREEN('help')}                  Show this help screen
+
+${BOLD('🔤 INLINE EVALUATION')}
+  ${CYAN('ntl -e "<code>"')}
+  ${CYAN('ntl --eval "<code>"')}    Compile and run a one-liner without a file
 
 ${BOLD('✨ LANGUAGE FEATURES')}
   ${GRAY('• Immutability by default with')} ${CYAN('val')}
@@ -96,8 +155,13 @@ function ok(msg)   { process.stdout.write(GREEN('  ✓') + ' ' + msg + '\n'); }
 function info(msg) { process.stdout.write(GRAY('  ' + msg) + '\n'); }
 
 function buildOpts() {
+  // --esm is a shorthand for --target esm
+  // --cjs is a shorthand for --target cjs (node)
+  const target = flags.esm ? 'esm'
+               : flags.cjs ? 'cjs'
+               : flags.target || 'node';
   return {
-    target:        flags.target          || 'node',
+    target,
     strict:        !!flags.strict,
     minify:        !!flags.minify,
     obfuscate:     !!flags.obfuscate,
@@ -181,11 +245,13 @@ function runFile(file, opts) {
     }
     const os_     = require('os');
     const crypto_ = require('crypto');
+    const isESM   = opts.target === 'esm' || opts.target === 'browser' || opts.target === 'deno';
+    const tmpExt  = isESM ? '.mjs' : '.js';
     const tmpFile = path.join(
       os_.tmpdir(),
-      'ntl_run_' + crypto_.createHash('md5').update(absFile + source.length).digest('hex').slice(0, 8) + '.js'
+      'ntl_run_' + crypto_.createHash('md5').update(absFile + source.length).digest('hex').slice(0, 8) + tmpExt
     );
-    const fullCode = buildRunPreamble(absFile) + '\n' + result.code;
+    const fullCode = isESM ? result.code : buildRunPreamble(absFile) + '\n' + result.code;
     try {
       fs.writeFileSync(tmpFile, fullCode, 'utf-8');
       require(tmpFile);
@@ -238,6 +304,16 @@ Module._load = function(req, parent, isMain) {
 })();`;
 }
 
+/**
+ * For ESM/browser/deno targets: no CJS preamble.
+ * ntl: imports are already converted to `import { x } from "ntl:mod"` by _toESM().
+ * We emit nothing — the host bundler (Vite, esbuild, Deno, etc.) resolves them.
+ * Returns empty string so callers can safely do `preamble + '\n' + code`.
+ */
+function buildESMPreamble(_absFile) {
+  return '';
+}
+
 function compileAndWrite(inputFile, outputFile, opts) {
   const compiler = new Compiler(opts);
   const t0       = Date.now();
@@ -275,7 +351,11 @@ function compileAndWrite(inputFile, outputFile, opts) {
     code = obfuscate(code, { level: 'max', stringArray: true, encodeNumbers: true, deadCode: true });
   if (outputFile) {
     fs.mkdirSync(path.dirname(path.resolve(outputFile)), { recursive: true });
-    const finalCode = buildRunPreamble(path.resolve(inputFile)) + '\n' + code;
+    const isESM = opts.target === 'esm' || opts.target === 'browser' || opts.target === 'deno';
+    const preamble = isESM
+      ? buildESMPreamble(path.resolve(inputFile))
+      : buildRunPreamble(path.resolve(inputFile));
+    const finalCode = preamble ? preamble + '\n' + code : code;
     fs.writeFileSync(outputFile, finalCode, 'utf-8');
     const kb = (finalCode.length / 1024).toFixed(1);
     ok(`${path.relative('.', inputFile)}  ${GRAY('→')}  ${outputFile}  ${GRAY(kb + ' KB · ' + result.time + 'ms · ' + result.target)}`);
@@ -286,12 +366,12 @@ function compileAndWrite(inputFile, outputFile, opts) {
 }
 
 function printVersion() {
-  process.stdout.write(`\nntl ${NTL_VERSION}  ${GRAY('node ' + process.version + '  ' + process.platform + '/' + process.arch)}\n\n`);
+  process.stdout.write(`\nntl-lang ${NTL_VERSION}  ${GRAY('node ' + process.version + '  ' + process.platform + '/' + process.arch)}\n\n`);
 }
 
 async function cmdDocumentation() {
   const localPath = path.join(NTL_DIR, 'README.md');
-  const targetPath = path.join(process.cwd(), 'NTL_README.md');
+  const targetPath = path.join(process.cwd(), 'NTL_LANG_README.md');
   
   info('Fetching documentation for you...');
 
@@ -352,6 +432,6 @@ switch (cmd) {
   case 'help': case '--help': case '-h': case undefined:
     process.stdout.write(HELP + '\n'); break;
   default:
-    process.stderr.write(RED('\nWait a second...') + ` I don't recognize the command '${cmd}'.\n\nTry running ${CYAN('ntl help')} to see what I can do.\n\n`);
+    process.stderr.write(RED('\nUnknown command:') + ` '${cmd}' is not a valid command.\n\nTry running ${CYAN('ntl help')} to see what I can do.\n\n`);
     process.exit(1);
 }

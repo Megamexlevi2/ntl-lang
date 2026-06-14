@@ -1,7 +1,7 @@
 val crypto = require("ntl:crypto")
 
 val key    = crypto.randomKey()
-val msg    = "Hello from NTL!"
+val msg    = "Hello from NTL-lang!"
 val hashed = crypto.sha256(msg)
 val token  = crypto.randomHex(32)
 val uid    = crypto.uuid()
@@ -17,20 +17,24 @@ log "Encrypted:", encrypted
 log "Decrypted:", decrypted
 log "Match:", decrypted === msg
 
-val password = "super_secret_123"
-val stored   = await crypto.bcryptHash(password)
-val valid    = await crypto.bcryptVerify(password, stored)
-val invalid  = await crypto.bcryptVerify("wrong_password", stored)
+async fn main() {
+  val password = "super_secret_123"
+  val stored   = await crypto.bcryptHash(password)
+  val valid    = await crypto.bcryptVerify(password, stored)
+  val invalid  = await crypto.bcryptVerify("wrong_password", stored)
 
-log "Password stored:", stored.slice(0, 20) + "..."
-log "Valid password:", valid
-log "Wrong password:", invalid
+  log "Password stored:", stored.slice(0, 20) + "..."
+  log "Valid password:", valid
+  log "Wrong password:", invalid
 
-val payload = { userId: 42, role: "admin" }
-val secret  = "jwt_signing_secret"
-val jwt     = crypto.signJWT(payload, secret, 3600)
-val decoded = crypto.verifyJWT(jwt, secret)
+  val payload = { userId: 42, role: "admin" }
+  val secret  = "jwt_signing_secret"
+  val jwt     = crypto.signJWT(payload, secret, 3600)
+  val decoded = crypto.verifyJWT(jwt, secret)
 
-log "JWT:", jwt.slice(0, 40) + "..."
-log "Decoded userId:", decoded.userId
-log "Decoded role:  ", decoded.role
+  log "JWT:", jwt.slice(0, 40) + "..."
+  log "Decoded userId:", decoded.userId
+  log "Decoded role:  ", decoded.role
+}
+
+main()

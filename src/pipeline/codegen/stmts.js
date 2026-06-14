@@ -147,6 +147,32 @@ function mixinStmts(gen) {
     const { resolveModuleName } = require('../../runtime/resolver');
     const rawSrc = node.source || '';
     const ntlName = resolveModuleName(rawSrc);
+    const isESMTarget = this.opts.target === 'esm' || this.opts.target === 'browser' || this.opts.target === 'deno';
+
+    // ── Native ESM path: emit import statements directly ────────────────────
+    // Avoids the require() → _toESM() dance so ntl: specifiers are preserved
+    // verbatim and host bundlers (Vite, esbuild, Deno, browser) can resolve them.
+    if (isESMTarget) {
+      const esmSrc = ntlName
+        ? 'ntl:' + ntlName
+        : rawSrc.endsWith('.ntl')
+          ? rawSrc.slice(0, -4) + '.js'
+          : rawSrc;
+      const q = JSON.stringify(esmSrc);
+      if (node.namespace)                              return `${p}import * as ${node.namespace} from ${q};\n`;
+      if (node.defaultImport && !node.specifiers?.length) return `${p}import ${node.defaultImport} from ${q};\n`;
+      if (node.defaultImport && node.specifiers?.length) {
+        const specs = node.specifiers.map(s => s.imported === s.local ? s.imported : `${s.imported} as ${s.local}`).join(', ');
+        return `${p}import ${node.defaultImport}, { ${specs} } from ${q};\n`;
+      }
+      if (node.specifiers?.length) {
+        const specs = node.specifiers.map(s => s.imported === s.local ? s.imported : `${s.imported} as ${s.local}`).join(', ');
+        return `${p}import { ${specs} } from ${q};\n`;
+      }
+      return `${p}import ${q};\n`;
+    }
+
+    // ── CJS path: emit require() calls (converted to ESM later by _toESM) ──
     let requireExpr;
     if (ntlName) {
       requireExpr = `require(${JSON.stringify('ntl:' + ntlName)})`;
@@ -172,6 +198,23 @@ function mixinStmts(gen) {
   /** @param {object} node @param {number} pad @returns {string} */
   gen.genExport = function(node, pad) {
     const p = this.pad(pad);
+    const isESMTarget = this.opts.target === 'esm' || this.opts.target === 'browser' || this.opts.target === 'deno';
+
+    // ── Native ESM exports ──────────────────────────────────────────────────
+    if (isESMTarget) {
+      if (node.default) return `${p}export default ${this.genExpr(node.value)};\n`;
+      if (node.declaration) {
+        const decl = this.genStmt(node.declaration, pad).trimStart();
+        return `${p}export ${decl}`;
+      }
+      if (node.specifiers?.length) {
+        const specs = node.specifiers.map(s => s.exported === s.local ? s.local : `${s.local} as ${s.exported}`).join(', ');
+        return `${p}export { ${specs} };\n`;
+      }
+      return '';
+    }
+
+    // ── CJS exports ─────────────────────────────────────────────────────────
     if (node.default) return `${p}module.exports = ${this.genExpr(node.value)};\n`;
     if (node.declaration) {
       const decl = this.genStmt(node.declaration, pad);
@@ -187,8 +230,11 @@ function mixinStmts(gen) {
   /** @param {object} node @param {number} pad @returns {string} */
   gen.genNTLRequire = function(node, pad) {
     const p = this.pad(pad);
+    const isESMTarget = this.opts.target === 'esm' || this.opts.target === 'browser' || this.opts.target === 'deno';
     return (node.modules || []).map(m =>
-      `${p}const ${m} = require(${JSON.stringify('ntl:' + m)});`
+      isESMTarget
+        ? `${p}import { ${m} } from ${JSON.stringify('ntl:' + m)};`
+        : `${p}const ${m} = require(${JSON.stringify('ntl:' + m)});`
     ).join('\n') + '\n';
   };
 

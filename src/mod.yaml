@@ -1,4 +1,4 @@
-# src — NTL compiler source root
+# src — NTL-lang compiler source root
 #
 # Main entry points for the compiler.
 # The public API is compiler.js — everything else is internal.

@@ -3,7 +3,7 @@ val http = require("ntl:http")
 val app = http.createServer()
 
 app.get("/", (req, res) => {
-  res.json({ message: "Hello from NTL!", version: "3.5.0" })
+  res.json({ message: "Hello from NTL!", version: "4.1.0" })
 })
 
 app.get("/users", (req, res) => {

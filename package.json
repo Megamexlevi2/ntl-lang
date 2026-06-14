@@ -1,7 +1,7 @@
 {
   "name": "@ntl-team/ntl-lang",
-  "version": "4.0.4",
-  "description": "NTL — A backend programming language that compiles to JavaScript.",
+  "version": "4.1.0",
+  "description": "NTL-lang \u2014 A compiled backend language that transpiles to JavaScript.",
   "author": "David Dev (https://github.com/Megamexlevi2)",
   "license": "Apache-2.0",
   "main": "main.js",
@@ -10,10 +10,10 @@
     "nax": "./main.js"
   },
   "scripts": {
-    "start":    "node main.js",
-    "repl":     "node main.js repl",
-    "test":     "node main.js run tests/all.ntl",
-    "eval":     "node main.js -e"
+    "start": "node main.js",
+    "repl": "node main.js repl",
+    "test": "node main.js run tests/all.ntl",
+    "eval": "node main.js -e"
   },
   "keywords": [
     "ntl",
@@ -40,5 +40,20 @@
   },
   "homepage": "https://github.com/Megamexlevi2/ntl-lang#readme",
   "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {},
+  "exports": {
+    ".": "./main.js",
+    "./compiler": "./src/compiler.js",
+    "./runtime/*": "./src/runtime/*.js"
+  },
+  "files": [
+    "main.js",
+    "repl.js",
+    "src/",
+    "modules/",
+    "config/",
+    "examples/",
+    "README.md",
+    "LICENSE"
+  ]
 }

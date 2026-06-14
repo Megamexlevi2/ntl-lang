@@ -15,5 +15,5 @@ log "=== Strings ==="
 log strings.capitalize("hello world")
 log strings.titleCase("the quick brown fox")
 log strings.truncate("This is a very long sentence that needs trimming", 25)
-log strings.slugify("Hello World! This is NTL 2026")
+log strings.slugify("Hello World! This is NTL-lang 2026")
 log "Word count:", strings.countWords("The quick brown fox jumps over the lazy dog")

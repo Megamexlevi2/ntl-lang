@@ -1,0 +1,21 @@
+// Utility helpers for the multi-file example
+
+fn isEven(n) {
+  return n % 2 === 0
+}
+
+fn isOdd(n) {
+  return n % 2 !== 0
+}
+
+fn range(start, end) {
+  val result = []
+  var i = start
+  while i < end {
+    result.push(i)
+    i++
+  }
+  return result
+}
+
+export { isEven, isOdd, range }
