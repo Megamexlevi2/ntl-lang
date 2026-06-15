@@ -97,6 +97,20 @@ Hello, world!
 
 ---
 
+
+---
+
+## 🚀 Other Projects
+
+If you liked **ntl-lang**, you should definitely try our other programming language project:
+
+👉 **[Lunex Lang](https://github.com/Megamexlevi2/lunex-lang-gz)** — A fast, expressive scripting language for the backend built in Go. It features a rich built-in standard library (HTTP, WebSockets, Databases) with zero external dependencies and a lightweight 8 MB core!
+
+---
+
+
+
+
 ## Language Reference
 
 ### Variables
